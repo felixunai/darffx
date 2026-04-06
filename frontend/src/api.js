@@ -1,7 +1,9 @@
 import axios from 'axios'
 
+const BASE_URL = import.meta.env.VITE_API_URL || 'https://darffx-production.up.railway.app'
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: BASE_URL,
 })
 
 // injeta token automaticamente
