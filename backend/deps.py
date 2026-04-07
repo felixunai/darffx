@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from jose import jwt, JWTError
 
 from .config import settings
-from .models.database import Base, User, PromoConfig
+from .models.database import Base, User, PromoConfig, ResetToken
 
 engine = create_engine(settings.DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
@@ -22,6 +22,7 @@ _MIGRATIONS = [
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS plano_expiracao TIMESTAMP",
     "ALTER TABLE operacoes ADD COLUMN IF NOT EXISTS ptax_data FLOAT",
     "ALTER TABLE apuracoes_anuais ADD COLUMN IF NOT EXISTS desbloqueado BOOLEAN DEFAULT FALSE",
+    "CREATE TABLE IF NOT EXISTS reset_tokens (token VARCHAR PRIMARY KEY, user_id VARCHAR REFERENCES users(id) ON DELETE CASCADE, expires_at TIMESTAMP NOT NULL, used BOOLEAN DEFAULT FALSE)",
 ]
 
 def init_db():

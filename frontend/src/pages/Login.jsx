@@ -57,6 +57,11 @@ export default function Login() {
           >
             {loading ? <span className="spinner" /> : 'Entrar'}
           </button>
+          <div style={{ textAlign:'right', marginTop:-8 }}>
+            <Link to="/recuperar-senha" style={{ fontSize:12, color:'var(--muted)' }}>
+              Esqueci minha senha
+            </Link>
+          </div>
         </form>
 
         <p style={styles.footer}>

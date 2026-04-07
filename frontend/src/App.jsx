@@ -8,6 +8,9 @@ import Apuracao     from './pages/Apuracao'
 import ApuracaoAnual from './pages/ApuracaoAnual'
 import Admin        from './pages/Admin'
 import Upgrade      from './pages/Upgrade'
+import LandingPage  from './pages/LandingPage'
+import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword  from './pages/ResetPassword'
 
 function RotaProtegida({ children }) {
   const { user, loading } = useAuth()
@@ -23,18 +26,26 @@ function RotaAdmin({ children }) {
   return children
 }
 
+function HomeRoute() {
+  const { user, loading } = useAuth()
+  if (loading) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh'}}><span className="spinner" /></div>
+  return user ? <Dashboard /> : <LandingPage />
+}
+
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/login"    element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/" element={<RotaProtegida><Dashboard /></RotaProtegida>} />
-      <Route path="/upload"   element={<RotaProtegida><Upload /></RotaProtegida>} />
+      <Route path="/"              element={<HomeRoute />} />
+      <Route path="/login"         element={<Login />} />
+      <Route path="/register"      element={<Register />} />
+      <Route path="/recuperar-senha" element={<ForgotPassword />} />
+      <Route path="/nova-senha"    element={<ResetPassword />} />
+      <Route path="/upload"        element={<RotaProtegida><Upload /></RotaProtegida>} />
       <Route path="/apuracao/anual/:ano" element={<RotaProtegida><ApuracaoAnual /></RotaProtegida>} />
-      <Route path="/apuracao/:id"        element={<RotaProtegida><Apuracao /></RotaProtegida>} />
-      <Route path="/upgrade"  element={<RotaProtegida><Upgrade /></RotaProtegida>} />
-      <Route path="/admin"    element={<RotaAdmin><Admin /></RotaAdmin>} />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="/apuracao/:id"  element={<RotaProtegida><Apuracao /></RotaProtegida>} />
+      <Route path="/upgrade"       element={<RotaProtegida><Upgrade /></RotaProtegida>} />
+      <Route path="/admin"         element={<RotaAdmin><Admin /></RotaAdmin>} />
+      <Route path="*"              element={<Navigate to="/" replace />} />
     </Routes>
   )
 }

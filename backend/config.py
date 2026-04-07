@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
     RESEND_API_KEY: str = ""
+    RESEND_FROM_EMAIL: str = "DarfFX <noreply@darffx.com.br>"
     FRONTEND_URL: str = "http://localhost:5173"
 
     # Preços em centavos (BRL)

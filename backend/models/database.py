@@ -114,3 +114,12 @@ class Pagamento(Base):
     created_at        = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="pagamentos")
+
+
+class ResetToken(Base):
+    __tablename__ = "reset_tokens"
+    token      = Column(String, primary_key=True)
+    user_id    = Column(String, ForeignKey("users.id"), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used       = Column(Boolean, default=False)
+    user = relationship("User")
