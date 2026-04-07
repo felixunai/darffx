@@ -35,9 +35,28 @@ COL_DATA_MAX = 450
 COL_TIPO_MAX = 600
 COL_DESC_MAX = 1100
 COL_AMT_MAX  = 1370
-# balance: > COL_AMT_MAX
 
-TIPOS_VALIDOS = {"CLOSED", "DEPOSIT", "OPENED", "WITHDRAWAL"}
+# Fuzzy map: prefixo OCR → tipo normalizado
+_TIPO_PREFIXOS = {
+    "CLOS": "CLOSED",
+    "OPEN": "OPENED",
+    "DEPO": "DEPOSIT",
+    "WITH": "WITHDRAWAL",
+    "WDRA": "WITHDRAWAL",
+    "WDRL": "WITHDRAWAL",
+}
+
+# Palavras-chave que identificam saque na descrição (campo mais longo = OCR mais preciso)
+_WITHDRAWAL_KEYWORDS = (
+    "withdrawal", "withdraw", "wdl", "wth", ":wdr",
+    "saqu", "retirad", "payout", "wire out",
+)
+
+# Palavras-chave que identificam depósito na descrição
+_DEPOSIT_KEYWORDS = (
+    ":deposit", "deposit:", "praxispay", "wire in", "funding",
+)
+
 
 @dataclass
 class Operacao:
@@ -51,10 +70,6 @@ class Operacao:
 # ── PARSE PRINCIPAL ────────────────────────────────────────────────────────
 
 def parse_pdf_avatrade(arquivo: BinaryIO) -> list[Operacao]:
-    """
-    Recebe o arquivo PDF da AvaTrade (BinaryIO) e retorna lista de Operacao.
-    Estratégia: rasteriza cada página com PyMuPDF e aplica OCR com Tesseract.
-    """
     if not OCR_DISPONIVEL:
         raise RuntimeError(
             "Dependências de OCR não instaladas. "
@@ -69,7 +84,6 @@ def parse_pdf_avatrade(arquivo: BinaryIO) -> list[Operacao]:
 
         for num_pag in range(len(doc)):
             pagina = doc[num_pag]
-            # rasteriza a 200 DPI para boa precisão de OCR
             mat  = fitz.Matrix(200/72, 200/72)
             pix  = pagina.get_pixmap(matrix=mat)
             path = os.path.join(tmpdir, f"pag_{num_pag:03d}.jpg")
@@ -93,25 +107,19 @@ def parse_pdf_avatrade(arquivo: BinaryIO) -> list[Operacao]:
 # ── OCR DE UMA PÁGINA ─────────────────────────────────────────────────────
 
 def _ocr_pagina(img: "Image.Image") -> list[Operacao]:
-    """Extrai operações de uma página rasterizada via OCR."""
     data = pytesseract.image_to_data(
         img, lang="eng", output_type=pytesseract.Output.DICT
     )
-
-    # agrupa palavras por linha (Y com tolerância de 8px)
     grupos = _agrupar_por_y(data, tolerancia=8)
     operacoes = []
-
     for grupo in grupos:
         op = _grupo_para_operacao(grupo)
         if op:
             operacoes.append(op)
-
     return operacoes
 
 
 def _agrupar_por_y(data: dict, tolerancia: int = 8) -> list[list[dict]]:
-    """Agrupa palavras do OCR por proximidade vertical."""
     palavras = []
     for i, word in enumerate(data["text"]):
         if word.strip() and int(data["conf"][i]) > 20:
@@ -138,57 +146,95 @@ def _agrupar_por_y(data: dict, tolerancia: int = 8) -> list[list[dict]]:
 
 
 def _grupo_para_operacao(grupo: list[dict]) -> Operacao | None:
-    """Classifica palavras de um grupo por coluna e monta Operacao."""
     cols: dict[str, list[str]] = defaultdict(list)
 
     for item in sorted(grupo, key=lambda w: w["x"]):
         col = _classificar_coluna(item["x"])
         cols[col].append(item["text"])
 
-    adj  = " ".join(cols.get("adj",  []))
-    tipo = " ".join(cols.get("tipo", [])).upper()
+    adj_raw  = " ".join(cols.get("adj",  []))
+    tipo_raw = " ".join(cols.get("tipo", [])).upper().strip()
 
-    # só processa linhas com adj_no numérico e tipo válido
-    if not adj.strip().isdigit() or len(adj.strip()) < 7:
+    # ── adj_no: extrai maior bloco numérico contínuo (tolerante a OCR) ─────
+    adj_blocos = re.findall(r'\d+', adj_raw)
+    adj = max(adj_blocos, key=len) if adj_blocos else ""
+    if len(adj) < 5:          # precisa de pelo menos 5 dígitos
         return None
-    if tipo not in TIPOS_VALIDOS:
+
+    # ── tipo: fuzzy match por prefixo ──────────────────────────────────────
+    tipo = _normalizar_tipo(tipo_raw)
+    if not tipo:
         return None
 
     data_str  = " ".join(cols.get("data",  []))
     descricao = " ".join(cols.get("desc",  []))
-    amt_str   = " ".join(cols.get("amount",  []))
+    amt_str   = " ".join(cols.get("amount", []))
 
-    data  = _parse_data(data_str)
+    data = _parse_data(data_str)
     if not data:
         return None
 
     valor = _parse_valor(amt_str)
-    # Tenta parsear balance para detectar sinal quando OCR perde o "-" do amount
-    balance_str = " ".join(cols.get("balance", []))
-    balance = _parse_valor(balance_str) if balance_str.strip() else None
 
-    # Reclassifica DEPOSIT como WITHDRAWAL:
-    # 1. Keyword na descrição (mais confiável)
-    # 2. Amount negativo
-    # 3. AvaTrade usa codes como "1Bwr", "Wdl", "Wth" para saques
-    if tipo == "DEPOSIT":
-        desc_lower = descricao.lower()
-        _withdrawal_keywords = ("withdrawal", "withdraw", "wdl", "wth", "saqu", "retirad")
-        if any(kw in desc_lower for kw in _withdrawal_keywords):
-            tipo = "WITHDRAWAL"
-            # Se OCR perdeu o sinal, força negativo
-            if valor > 0:
-                valor = -valor
-        elif valor < 0:
-            tipo = "WITHDRAWAL"
+    # ── corrige tipo usando a descrição (campo mais longo → OCR mais preciso)
+    tipo, valor = _corrigir_tipo_e_valor(tipo, descricao, valor)
 
     return Operacao(
-        adj_no=adj.strip(),
+        adj_no=adj,
         data=data,
         tipo=tipo,
         descricao=descricao,
         valor_usd=valor,
     )
+
+
+def _normalizar_tipo(tipo_raw: str) -> str | None:
+    """Normaliza tipo OCR tolerando truncamentos e substituições de letras."""
+    t = tipo_raw.upper().strip()
+    if not t:
+        return None
+
+    # Match exato
+    if t in {"CLOSED", "OPENED", "DEPOSIT", "WITHDRAWAL"}:
+        return t
+
+    # Match por prefixo (ex.: "CLOS", "DEPO", "WITH")
+    for prefixo, tipo_real in _TIPO_PREFIXOS.items():
+        if t.startswith(prefixo):
+            return tipo_real
+
+    # Match com erros de OCR comuns (O→0, I→1, etc.)
+    t_limpo = t.replace("0", "O").replace("1", "I").replace("5", "S")
+    if t_limpo.startswith("CLOS"): return "CLOSED"
+    if t_limpo.startswith("OPEN"): return "OPENED"
+    if t_limpo.startswith("DEPO"): return "DEPOSIT"
+    if t_limpo.startswith("WITH"): return "WITHDRAWAL"
+
+    return None
+
+
+def _corrigir_tipo_e_valor(tipo: str, descricao: str, valor: float):
+    """
+    Usa a descrição para corrigir tipo incorreto.
+    A descrição é um campo maior → OCR mais preciso que o campo tipo (curto).
+    """
+    desc_lower = descricao.lower()
+
+    # Saque: keyword na descrição, independente do tipo OCR
+    if any(kw in desc_lower for kw in _WITHDRAWAL_KEYWORDS):
+        # Se OCR perdeu o sinal negativo, força negativo
+        valor_corrigido = -abs(valor)
+        return "WITHDRAWAL", valor_corrigido
+
+    # Se tipo é DEPOSIT mas valor é negativo → saque não identificado por keyword
+    if tipo == "DEPOSIT" and valor < 0:
+        return "WITHDRAWAL", valor
+
+    # Depósito: keyword na descrição confirma
+    if any(kw in desc_lower for kw in _DEPOSIT_KEYWORDS) and tipo == "DEPOSIT":
+        return "DEPOSIT", abs(valor)   # garante positivo
+
+    return tipo, valor
 
 
 def _classificar_coluna(x: int) -> str:
@@ -206,13 +252,11 @@ def _parse_valor(texto: str) -> float:
     """
     Converte 'US$ 1,234.56', 'USS 100.01', '-US$ 4.86' → float.
     O extrato da AvaTrade usa formato americano (ponto = decimal, vírgula = milhar).
-    O OCR às vezes confunde '$' com 'S' → normaliza.
     """
     if not texto:
         return 0.0
     t = texto.strip()
     negativo = t.startswith("-")
-    # remove prefixos US$, USS, US $, S$, etc.
     t = re.sub(r"-?\s*[Uu][Ss]?[Ss$]?\s*\$?\s*", "", t).strip()
     if not t:
         return 0.0
@@ -221,18 +265,14 @@ def _parse_valor(texto: str) -> float:
         last_comma = t.rfind(",")
         last_dot   = t.rfind(".")
         if last_dot > last_comma:
-            # formato US: 1,234.56 → vírgula é milhar, remove-a
             t = t.replace(",", "")
         else:
-            # formato BR: 1.234,56 → ponto é milhar, vírgula vira decimal
             t = t.replace(".", "").replace(",", ".")
     elif "," in t:
         parts = t.split(",")
-        # vírgula de milhar US: exatamente 3 dígitos após a vírgula → 1,234 → 1234
         if len(parts) == 2 and len(parts[1]) == 3 and parts[1].isdigit():
             t = t.replace(",", "")
         else:
-            # vírgula decimal: 1,50 → 1.50
             t = t.replace(",", ".")
 
     try:

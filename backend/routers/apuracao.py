@@ -459,6 +459,7 @@ def _mensal_to_dict(a: Apuracao, incluir_operacoes=False) -> dict:
         "depositos_usd": _r2(a.depositos_usd),
         "saques_usd": _r2(a.saques_usd),
         "vencimento_darf": a.vencimento_darf.isoformat() if a.vencimento_darf else None,
+        "operacoes_count": len(a.operacoes),
         "darf_pago": a.darf_pago,
         "created_at": a.created_at.isoformat() if a.created_at else None,
     }
