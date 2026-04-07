@@ -7,6 +7,9 @@ from jose import jwt
 from datetime import datetime, timedelta
 import uuid
 import secrets
+import logging
+
+logger = logging.getLogger(__name__)
 
 from ..models.database import User
 from ..deps import get_db, get_current_user
@@ -77,12 +80,14 @@ def solicitar_reset(data: SolicitarResetIn, db: Session = Depends(get_db)):
     db.add(rt)
     db.commit()
 
-    if settings.RESEND_API_KEY:
+    if not settings.RESEND_API_KEY:
+        logger.warning("RESEND_API_KEY não configurado — e-mail de recuperação não enviado para %s", user.email)
+    else:
         try:
             import resend
             resend.api_key = settings.RESEND_API_KEY
             link = f"{settings.FRONTEND_URL}/nova-senha?token={token}"
-            resend.Emails.send({
+            result = resend.Emails.send({
                 "from": settings.RESEND_FROM_EMAIL,
                 "to": user.email,
                 "subject": "DarfFX — Recuperação de senha",
@@ -100,8 +105,9 @@ def solicitar_reset(data: SolicitarResetIn, db: Session = Depends(get_db)):
                 </div>
                 """,
             })
-        except Exception:
-            pass
+            logger.info("E-mail de recuperação enviado: %s → id=%s", user.email, result)
+        except Exception as e:
+            logger.error("Falha ao enviar e-mail de recuperação para %s: %s", user.email, e)
 
     return {"ok": True, "msg": "Se o e-mail existir, você receberá as instruções."}
 
