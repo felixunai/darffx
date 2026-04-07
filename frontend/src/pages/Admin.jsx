@@ -148,7 +148,7 @@ export default function Admin() {
                       {salvando === u.id ? (
                         <span className="spinner" style={{width:14,height:14}} />
                       ) : (
-                        <div style={{ display:'flex', gap:6', flexWrap:'wrap', gap:6 }}>
+                        <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
                           {PLANOS.filter(p => p !== u.plano).map(p => (
                             <button key={p}
                               className="btn btn-ghost"
