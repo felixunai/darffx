@@ -57,6 +57,30 @@ def _enviar_email_recuperacao(to_email: str, nome: str | None, link: str) -> Non
         except Exception as e:
             logger.error("Resend falhou (%s) — tentando Gmail SMTP", e)
 
+    # --- Brevo HTTP API ---
+    if settings.BREVO_API_KEY and settings.BREVO_FROM_EMAIL:
+        try:
+            import httpx
+            resp = httpx.post(
+                "https://api.brevo.com/v3/smtp/email",
+                headers={
+                    "api-key": settings.BREVO_API_KEY,
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "sender": {"name": "DarfFX", "email": settings.BREVO_FROM_EMAIL},
+                    "to": [{"email": to_email}],
+                    "subject": assunto,
+                    "htmlContent": html,
+                },
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            logger.info("E-mail enviado via Brevo para %s (status %s)", to_email, resp.status_code)
+            return
+        except Exception as e:
+            logger.error("Brevo falhou: %s", e)
+
     # --- Gmail SMTP ---
     if settings.SMTP_USER and settings.SMTP_PASSWORD:
         try:

@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     # Gmail SMTP (alternativa gratuita sem domínio próprio)
     SMTP_USER: str = ""      # seu Gmail: felixunai@gmail.com
     SMTP_PASSWORD: str = ""  # senha de app gerada no Google
+    # Brevo (ex-Sendinblue) — HTTP API, 300 emails/dia grátis
+    BREVO_API_KEY: str = ""
+    BREVO_FROM_EMAIL: str = ""  # ex: darffx.app@gmail.com (verificado no Brevo)
 
     # Preços em centavos (BRL)
     PRECO_ACESSO_CENTAVOS: int = 6990   # R$ 69,90 — acesso anual (expira 31/12 do ano vigente)
