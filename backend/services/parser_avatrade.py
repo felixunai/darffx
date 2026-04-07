@@ -186,20 +186,37 @@ def _classificar_coluna(x: int) -> str:
 
 def _parse_valor(texto: str) -> float:
     """
-    Converte 'US$ 1.234,56', 'USS 100,01', '-US$ 4,86' → float.
+    Converte 'US$ 1,234.56', 'USS 100.01', '-US$ 4.86' → float.
+    O extrato da AvaTrade usa formato americano (ponto = decimal, vírgula = milhar).
     O OCR às vezes confunde '$' com 'S' → normaliza.
     """
     if not texto:
         return 0.0
     t = texto.strip()
     negativo = t.startswith("-")
-    # remove prefixos US$, USS, US $, etc.
-    t = re.sub(r"-?\s*US[S$]?\s*", "", t, flags=re.IGNORECASE).strip()
-    # formato BR: vírgula = decimal, ponto = milhar
+    # remove prefixos US$, USS, US $, S$, etc.
+    t = re.sub(r"-?\s*[Uu][Ss]?[Ss$]?\s*\$?\s*", "", t).strip()
+    if not t:
+        return 0.0
+
     if "," in t and "." in t:
-        t = t.replace(".", "").replace(",", ".")
+        last_comma = t.rfind(",")
+        last_dot   = t.rfind(".")
+        if last_dot > last_comma:
+            # formato US: 1,234.56 → vírgula é milhar, remove-a
+            t = t.replace(",", "")
+        else:
+            # formato BR: 1.234,56 → ponto é milhar, vírgula vira decimal
+            t = t.replace(".", "").replace(",", ".")
     elif "," in t:
-        t = t.replace(",", ".")
+        parts = t.split(",")
+        # vírgula de milhar US: exatamente 3 dígitos após a vírgula → 1,234 → 1234
+        if len(parts) == 2 and len(parts[1]) == 3 and parts[1].isdigit():
+            t = t.replace(",", "")
+        else:
+            # vírgula decimal: 1,50 → 1.50
+            t = t.replace(",", ".")
+
     try:
         valor = float(t)
         return -valor if negativo else valor

@@ -118,15 +118,15 @@ def calcular_ir_mensal(
 def _detectar_day_trade(operacoes: list) -> bool:
     """
     Detecta se há day trade: mesmo dia com OPENED e CLOSED.
-    Agrupa operações por data e verifica se há pares no mesmo dia.
+    Requer ambos os tipos para considerar day trade real.
     """
     from collections import defaultdict
-    por_dia: dict = defaultdict(list)
+    por_dia: dict = defaultdict(set)
     for op in operacoes:
-        por_dia[op.data.date()].append(op)
+        por_dia[op.data.date()].add(op.tipo)
 
-    for dia, ops in por_dia.items():
-        if len(ops) >= 2:
+    for tipos in por_dia.values():
+        if "OPENED" in tipos and "CLOSED" in tipos:
             return True
     return False
 

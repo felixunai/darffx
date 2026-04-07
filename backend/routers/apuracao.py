@@ -45,14 +45,17 @@ async def upload_extrato(
     if not operacoes:
         raise HTTPException(422, "Nenhuma operação encontrada no arquivo.")
 
-    # 2. Agrupa por mês/ano
+    # 2. Agrupa por mês/ano (inclui OPENED para detectar day trade)
     por_mes: dict = defaultdict(list)
     for op in operacoes:
-        if op.tipo == "CLOSED":
+        if op.tipo in ("CLOSED", "OPENED"):
             chave = (op.data.year, op.data.month)
             por_mes[chave].append(op)
 
-    if not por_mes:
+    tem_closed = any(
+        op.tipo == "CLOSED" for ops in por_mes.values() for op in ops
+    )
+    if not por_mes or not tem_closed:
         raise HTTPException(422, "Nenhuma operação CLOSED encontrada.")
 
     # 3. Para cada mês, busca PTAX e calcula
@@ -87,6 +90,8 @@ async def upload_extrato(
         db.add(apuracao)
 
         for op in ops:
+            if op.tipo != "CLOSED":
+                continue
             db.add(Operacao(
                 id=str(uuid.uuid4()),
                 apuracao_id=apuracao.id,
