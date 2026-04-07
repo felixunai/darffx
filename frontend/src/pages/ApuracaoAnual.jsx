@@ -19,9 +19,11 @@ export default function ApuracaoAnual() {
   const { ano }    = useParams()
   const navigate   = useNavigate()
   const [params]   = useSearchParams()
-  const [dados,    setDados]    = useState(null)
-  const [loading,  setLoading]  = useState(true)
-  const [pagando,  setPagando]  = useState(false)
+  const [dados,       setDados]       = useState(null)
+  const [loading,     setLoading]     = useState(true)
+  const [pagando,     setPagando]     = useState(false)
+  const [comprando,   setComprando]   = useState(false)
+  const [promo,       setPromo]       = useState(null)
   const { refreshUser } = useAuth()
 
   useEffect(() => {
@@ -29,7 +31,21 @@ export default function ApuracaoAnual() {
       .then(r => setDados(r.data))
       .catch(() => navigate('/'))
       .finally(() => setLoading(false))
+    api.get('/pagamento/promo')
+      .then(r => setPromo(r.data))
+      .catch(() => setPromo({ promo_ativa: false, preco_brl: 'R$ 69,90' }))
   }, [ano])
+
+  const irParaCheckout = async () => {
+    setComprando(true)
+    try {
+      const { data } = await api.post('/pagamento/checkout')
+      window.location.href = data.checkout_url
+    } catch (e) {
+      alert(e.response?.data?.detail || 'Erro ao iniciar pagamento.')
+      setComprando(false)
+    }
+  }
 
   // Exibe sucesso de desbloqueio após retorno do Stripe
   const acabouDeDesbloquear = params.get('desbloqueado') === '1'
@@ -153,34 +169,66 @@ export default function ApuracaoAnual() {
         {/* PAYWALL (plano free) */}
         {!desbloqueado && (
           <div className="no-print" style={{
-            background:'linear-gradient(135deg, rgba(0,229,160,0.05), rgba(0,149,255,0.05))',
-            border:'2px solid var(--accent)', borderRadius:20, padding:32,
-            textAlign:'center', marginBottom:24,
+            background: promo?.promo_ativa
+              ? 'linear-gradient(135deg,rgba(255,179,71,0.06),rgba(255,120,0,0.04))'
+              : 'linear-gradient(135deg,rgba(0,229,160,0.05),rgba(0,149,255,0.05))',
+            border: `2px solid ${promo?.promo_ativa ? 'var(--warn)' : 'var(--accent)'}`,
+            borderRadius:20, padding:32, textAlign:'center', marginBottom:24,
           }}>
-            <div style={{ fontSize:40, marginBottom:12 }}>🔒</div>
+            {promo?.promo_ativa && (
+              <div style={{
+                display:'inline-flex', alignItems:'center', gap:6, marginBottom:14,
+                background:'rgba(255,179,71,0.15)', border:'1px solid rgba(255,179,71,0.4)',
+                borderRadius:20, padding:'4px 14px', fontSize:12, fontWeight:700, color:'var(--warn)',
+              }}>
+                🏷️ OFERTA ESPECIAL · TEMPO LIMITADO
+              </div>
+            )}
+
+            <div style={{ fontSize:36, marginBottom:10 }}>🔒</div>
             <h2 style={{ fontSize:22, marginBottom:8, fontFamily:'Syne' }}>
               Desbloqueie o Relatório Completo
             </h2>
-            <p style={{ color:'var(--muted)', fontSize:15, maxWidth:400, margin:'0 auto 24px' }}>
-              Você pode ver seu lucro estimado. Para o cálculo oficial do imposto e o relatório para declaração, desbloqueie por <strong style={{color:'var(--accent)'}}>R$ 69,90</strong> — pagamento único, sem assinatura.
+            <p style={{ color:'var(--muted)', fontSize:15, maxWidth:420, margin:'0 auto 20px' }}>
+              Você pode ver seu lucro estimado. Para o cálculo oficial do imposto e o relatório
+              para declaração, desbloqueie por{' '}
+              {promo?.promo_ativa && (
+                <span style={{ textDecoration:'line-through', color:'var(--muted)', fontSize:13, marginRight:4 }}>
+                  R$ 69,90
+                </span>
+              )}
+              <strong style={{ color: promo?.promo_ativa ? 'var(--warn)' : 'var(--accent)' }}>
+                {promo ? promo.preco_brl : 'R$ 69,90'}
+              </strong>
+              {' '}— pagamento único, sem assinatura.
             </p>
 
-            <div style={{ display:'flex', gap:12, justifyContent:'center', flexWrap:'wrap', marginBottom:20 }}>
+            <div style={{ display:'flex', gap:10, justifyContent:'center', flexWrap:'wrap', marginBottom:22 }}>
               {['Cálculo oficial 15%','PTAX automático','Compensação de prejuízos','Relatório para IRPF'].map((f, i) => (
                 <span key={i} style={{
                   fontSize:12, padding:'5px 14px', borderRadius:20,
-                  background:'rgba(0,229,160,0.1)', color:'var(--accent)',
-                  border:'1px solid rgba(0,229,160,0.3)',
+                  background: promo?.promo_ativa ? 'rgba(255,179,71,0.1)' : 'rgba(0,229,160,0.1)',
+                  color: promo?.promo_ativa ? 'var(--warn)' : 'var(--accent)',
+                  border: `1px solid ${promo?.promo_ativa ? 'rgba(255,179,71,0.3)' : 'rgba(0,229,160,0.3)'}`,
                 }}>✓ {f}</span>
               ))}
             </div>
 
             <button
               className="btn btn-primary"
-              style={{ padding:'14px 36px', fontSize:15, borderRadius:12 }}
-              onClick={() => navigate('/upgrade')}
+              style={{
+                padding:'14px 40px', fontSize:16, borderRadius:12,
+                background: promo?.promo_ativa ? 'var(--warn)' : undefined,
+                borderColor: promo?.promo_ativa ? 'var(--warn)' : undefined,
+                color: promo?.promo_ativa ? '#000' : undefined,
+                opacity: comprando ? 0.8 : 1,
+              }}
+              onClick={irParaCheckout}
+              disabled={comprando}
             >
-              Desbloquear por R$ 69,90 →
+              {comprando
+                ? <><span className="spinner" style={{width:14,height:14}} /> Aguarde...</>
+                : `Desbloquear por ${promo ? promo.preco_brl : 'R$ 69,90'} →`}
             </button>
 
             <p style={{ fontSize:12, color:'var(--muted)', marginTop:12 }}>
