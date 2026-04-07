@@ -37,7 +37,7 @@ COL_DESC_MAX = 1100
 COL_AMT_MAX  = 1370
 # balance: > COL_AMT_MAX
 
-TIPOS_VALIDOS = {"CLOSED", "DEPOSIT", "OPENED"}
+TIPOS_VALIDOS = {"CLOSED", "DEPOSIT", "OPENED", "WITHDRAWAL"}
 
 @dataclass
 class Operacao:
@@ -163,6 +163,14 @@ def _grupo_para_operacao(grupo: list[dict]) -> Operacao | None:
         return None
 
     valor = _parse_valor(amt_str)
+
+    # Reclassifica DEPOSIT negativo ou com keyword "withdrawal" como WITHDRAWAL
+    if tipo == "DEPOSIT":
+        desc_lower = descricao.lower()
+        if "withdrawal" in desc_lower or "withdraw" in desc_lower:
+            tipo = "WITHDRAWAL"
+        elif valor < 0:
+            tipo = "WITHDRAWAL"
 
     return Operacao(
         adj_no=adj.strip(),

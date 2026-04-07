@@ -1,9 +1,17 @@
 """
 Router: /apuracao
-- POST /apuracao/upload  — recebe PDF, processa, salva e retorna resultado
-- GET  /apuracao/        — lista apurações do usuário
-- GET  /apuracao/{id}    — detalhe de uma apuração
-- GET  /apuracao/{id}/pdf — download do relatório PDF
+
+Lei 14.754/2023: apuração ANUAL, alíquota fixa 15%, sem DARF mensal.
+
+Endpoints:
+  POST /apuracao/upload              — processa PDF e atualiza apuração anual
+  GET  /apuracao/anual/              — lista apurações anuais do usuário
+  GET  /apuracao/anual/{ano}         — detalhe anual com breakdown mensal
+  GET  /apuracao/{id}                — detalhe de um mês (para drill-down)
+  GET  /apuracao/anual/{ano}/pdf     — relatório PDF anual
+  PATCH /apuracao/anual/{ano}/pago   — marca DARF anual como pago
+  DELETE /apuracao/{id}              — remove mês (permite reprocessar)
+  DELETE /apuracao/anual/{ano}       — remove todo o ano
 """
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from fastapi.responses import StreamingResponse
@@ -14,13 +22,15 @@ import uuid
 from io import BytesIO
 
 from ..services.parser_avatrade import parse_pdf_avatrade
-from ..services.calculo_ir import buscar_ptax, calcular_ir_mensal
+from ..services.calculo_ir import buscar_ptax, calcular_ir_mensal, calcular_ir_anual
 from ..services.gerador_pdf import gerar_relatorio_pdf
-from ..models.database import Apuracao, Operacao, User
+from ..models.database import Apuracao, ApuracaoAnual, Operacao, User
 from ..deps import get_db, get_current_user, ADMIN_EMAIL
-from datetime import datetime
 
 router = APIRouter(prefix="/apuracao", tags=["apuracao"])
+
+
+# ── UPLOAD ────────────────────────────────────────────────────────────────────
 
 @router.post("/upload")
 async def upload_extrato(
@@ -28,19 +38,12 @@ async def upload_extrato(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_current_user),
 ):
-    """
-    Recebe o PDF da AvaTrade, faz o parse, busca PTAX e calcula IR de cada mês.
-    Retorna lista de apurações mensais.
-    """
     if not arquivo.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Envie um arquivo PDF.")
 
-    # Verificação de plano
     _verificar_plano(usuario, db)
 
     conteudo = await arquivo.read()
-
-    # 1. Parse do PDF
     try:
         operacoes = parse_pdf_avatrade(BytesIO(conteudo))
     except Exception as e:
@@ -49,70 +52,42 @@ async def upload_extrato(
     if not operacoes:
         raise HTTPException(422, "Nenhuma operação encontrada no arquivo.")
 
-    # 2. Agrupa por mês/ano (inclui todos os tipos)
+    # Agrupa por mês/ano
     por_mes: dict = defaultdict(list)
     for op in operacoes:
         chave = (op.data.year, op.data.month)
         por_mes[chave].append(op)
 
-    tem_closed = any(
-        op.tipo == "CLOSED" for ops in por_mes.values() for op in ops
-    )
-    if not por_mes or not tem_closed:
+    tem_closed = any(op.tipo == "CLOSED" for ops in por_mes.values() for op in ops)
+    if not tem_closed:
         raise HTTPException(422, "Nenhuma operação CLOSED encontrada.")
 
-    # 3. Carry Forward: lê perdas acumuladas de apurações já existentes (anteriores)
+    # Lê carry forward de anos já existentes
     apuracoes_existentes = (
         db.query(Apuracao)
         .filter_by(user_id=usuario.id)
         .order_by(Apuracao.ano, Apuracao.mes)
         .all()
     )
-    acumulado_perdas_brl = 0.0
-    for ap in apuracoes_existentes:
-        if ap.ganho_brl < 0:
-            acumulado_perdas_brl += abs(ap.ganho_brl)
-        elif ap.ganho_brl > 0:
-            acumulado_perdas_brl = max(0.0, acumulado_perdas_brl - ap.ganho_brl)
+    acumulado_brl = _calcular_carry_forward(apuracoes_existentes)
 
-    # 4. Para cada mês (ordem cronológica), busca PTAX e calcula
-    resultados = []
+    # Processa meses em ordem cronológica
+    meses_novos: dict = defaultdict(list)   # ano → [ResultadoMensal]
     for (ano, mes), ops in sorted(por_mes.items()):
         existente = db.query(Apuracao).filter_by(
             user_id=usuario.id, mes=mes, ano=ano
         ).first()
         if existente:
-            resultados.append(_apuracao_to_dict(existente))
-            # atualiza carry forward com base no resultado existente
+            # Já processado — só acumula carry
             if existente.ganho_brl < 0:
-                acumulado_perdas_brl += abs(existente.ganho_brl)
+                acumulado_brl += abs(existente.ganho_brl)
             elif existente.ganho_brl > 0:
-                acumulado_perdas_brl = max(0.0, acumulado_perdas_brl - existente.ganho_brl)
+                acumulado_brl = max(0.0, acumulado_brl - existente.ganho_brl)
             continue
 
-        ptax = await buscar_ptax(mes, ano)
-        if not ptax:
-            ptax = 0.0
+        ptax = await buscar_ptax(mes, ano) or 0.0
+        resultado = calcular_ir_mensal(ops, ptax, mes, ano, carry_fwd_brl=acumulado_brl)
 
-        resultado = calcular_ir_mensal(ops, ptax, mes, ano, carry_fwd_brl=acumulado_perdas_brl)
-
-        # Calcula depósitos e saques do mês
-        depositos_usd = sum(
-            op.valor_usd for op in ops
-            if op.tipo == "DEPOSIT" and op.valor_usd > 0
-        )
-        saques_usd = sum(
-            abs(op.valor_usd) for op in ops
-            if op.tipo in ("DEPOSIT", "WITHDRAWAL") and op.valor_usd < 0
-        )
-
-        # Atualiza carry forward para próximo mês
-        if resultado.ganho_brl < 0:
-            acumulado_perdas_brl += abs(resultado.ganho_brl)
-        elif resultado.ganho_brl > 0:
-            acumulado_perdas_brl = max(0.0, acumulado_perdas_brl - resultado.ganho_brl)
-
-        # 5. Salva no banco
         apuracao = Apuracao(
             id=str(uuid.uuid4()),
             user_id=usuario.id,
@@ -125,14 +100,14 @@ async def upload_extrato(
             aliquota=resultado.aliquota,
             imposto_brl=resultado.imposto_brl,
             tem_day_trade=resultado.tem_day_trade,
-            depositos_usd=depositos_usd,
-            saques_usd=saques_usd,
+            depositos_usd=resultado.depositos_usd,
+            saques_usd=resultado.saques_usd,
             vencimento_darf=resultado.vencimento_darf,
         )
         db.add(apuracao)
 
         for op in ops:
-            if op.tipo not in ("CLOSED", "OPENED", "DEPOSIT"):
+            if op.tipo not in ("CLOSED", "OPENED", "DEPOSIT", "WITHDRAWAL"):
                 continue
             db.add(Operacao(
                 id=str(uuid.uuid4()),
@@ -144,73 +119,157 @@ async def upload_extrato(
                 valor_usd=op.valor_usd,
             ))
 
-        db.commit()
-        db.refresh(apuracao)
-        resultados.append(_apuracao_to_dict(apuracao))
+        meses_novos[ano].append(resultado)
 
-    return {"apuracoes": resultados, "total": len(resultados)}
+        # Atualiza carry forward
+        if resultado.ganho_brl < 0:
+            acumulado_brl += abs(resultado.ganho_brl)
+        elif resultado.ganho_brl > 0:
+            acumulado_brl = max(0.0, acumulado_brl - resultado.ganho_brl)
 
-@router.get("/")
-def listar_apuracoes(
+    db.commit()
+
+    # Cria/atualiza ApuracaoAnual para cada ano afetado
+    anos_afetados = set(meses_novos.keys())
+    for ano in anos_afetados:
+        _recalcular_anual(db, usuario.id, ano)
+
+    db.commit()
+
+    # Retorna as apurações anuais atualizadas
+    anuais = (
+        db.query(ApuracaoAnual)
+        .filter_by(user_id=usuario.id)
+        .order_by(ApuracaoAnual.ano.desc())
+        .all()
+    )
+    return {"apuracoes_anuais": [_anual_to_dict(a) for a in anuais]}
+
+
+# ── LISTAGEM ANUAL ────────────────────────────────────────────────────────────
+
+@router.get("/anual/")
+def listar_anuais(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_current_user),
 ):
+    anuais = (
+        db.query(ApuracaoAnual)
+        .filter_by(user_id=usuario.id)
+        .order_by(ApuracaoAnual.ano.desc())
+        .all()
+    )
+    # Se não existem registros anuais mas existem mensais, recalcula
+    if not anuais:
+        anos = {a.ano for a in db.query(Apuracao).filter_by(user_id=usuario.id).all()}
+        for ano in sorted(anos):
+            _recalcular_anual(db, usuario.id, ano)
+        db.commit()
+        anuais = (
+            db.query(ApuracaoAnual)
+            .filter_by(user_id=usuario.id)
+            .order_by(ApuracaoAnual.ano.desc())
+            .all()
+        )
+    return [_anual_to_dict(a) for a in anuais]
+
+
+@router.get("/anual/{ano}")
+def detalhe_anual(
+    ano: int,
+    db: Session = Depends(get_db),
+    usuario: User = Depends(get_current_user),
+):
+    anual = db.query(ApuracaoAnual).filter_by(user_id=usuario.id, ano=ano).first()
+    if not anual:
+        raise HTTPException(404, "Apuração anual não encontrada.")
+
+    meses = (
+        db.query(Apuracao)
+        .filter_by(user_id=usuario.id, ano=ano)
+        .order_by(Apuracao.mes)
+        .all()
+    )
+    return {**_anual_to_dict(anual), "meses": [_mensal_to_dict(m) for m in meses]}
+
+
+@router.patch("/anual/{ano}/pago")
+def marcar_anual_pago(
+    ano: int,
+    db: Session = Depends(get_db),
+    usuario: User = Depends(get_current_user),
+):
+    anual = db.query(ApuracaoAnual).filter_by(user_id=usuario.id, ano=ano).first()
+    if not anual:
+        raise HTTPException(404, "Apuração anual não encontrada.")
+    anual.darf_pago = True
+    db.commit()
+    return _anual_to_dict(anual)
+
+
+@router.delete("/anual/{ano}")
+def deletar_anual(
+    ano: int,
+    db: Session = Depends(get_db),
+    usuario: User = Depends(get_current_user),
+):
+    anual = db.query(ApuracaoAnual).filter_by(user_id=usuario.id, ano=ano).first()
+    if anual:
+        db.delete(anual)
+    meses = db.query(Apuracao).filter_by(user_id=usuario.id, ano=ano).all()
+    for m in meses:
+        db.query(Operacao).filter_by(apuracao_id=m.id).delete()
+        db.delete(m)
+    db.commit()
+    return {"ok": True}
+
+
+# ── DETALHE MENSAL (drill-down) ───────────────────────────────────────────────
+
+@router.get("/")
+def listar_mensais(
+    db: Session = Depends(get_db),
+    usuario: User = Depends(get_current_user),
+):
+    """Mantido para compatibilidade — retorna meses ordenados."""
     apuracoes = (
         db.query(Apuracao)
         .filter_by(user_id=usuario.id)
         .order_by(Apuracao.ano.desc(), Apuracao.mes.desc())
         .all()
     )
-    return [_apuracao_to_dict(a) for a in apuracoes]
+    return [_mensal_to_dict(a) for a in apuracoes]
+
 
 @router.get("/{apuracao_id}")
-def detalhe_apuracao(
+def detalhe_mensal(
     apuracao_id: str,
     db: Session = Depends(get_db),
     usuario: User = Depends(get_current_user),
 ):
-    apuracao = db.query(Apuracao).filter_by(
-        id=apuracao_id, user_id=usuario.id
-    ).first()
+    apuracao = db.query(Apuracao).filter_by(id=apuracao_id, user_id=usuario.id).first()
     if not apuracao:
         raise HTTPException(404, "Apuração não encontrada.")
-    return _apuracao_to_dict(apuracao, incluir_operacoes=True)
+    return _mensal_to_dict(apuracao, incluir_operacoes=True)
 
-@router.get("/{apuracao_id}/pdf")
-def download_pdf(
+
+@router.delete("/{apuracao_id}")
+def deletar_mensal(
     apuracao_id: str,
     db: Session = Depends(get_db),
     usuario: User = Depends(get_current_user),
 ):
-    apuracao = db.query(Apuracao).filter_by(
-        id=apuracao_id, user_id=usuario.id
-    ).first()
+    apuracao = db.query(Apuracao).filter_by(id=apuracao_id, user_id=usuario.id).first()
     if not apuracao:
         raise HTTPException(404, "Apuração não encontrada.")
+    ano = apuracao.ano
+    db.query(Operacao).filter_by(apuracao_id=apuracao_id).delete()
+    db.delete(apuracao)
+    db.commit()
+    _recalcular_anual(db, usuario.id, ano)
+    db.commit()
+    return {"ok": True}
 
-    from ..services.calculo_ir import ResultadoMensal
-    resultado = ResultadoMensal(
-        mes=apuracao.mes, ano=apuracao.ano,
-        ganho_usd=apuracao.ganho_usd,
-        ptax=apuracao.ptax,
-        ganho_brl=apuracao.ganho_brl,
-        carry_fwd_brl=apuracao.carry_fwd_brl or 0.0,
-        base_tributavel_brl=apuracao.base_ir_brl or apuracao.ganho_brl,
-        aliquota=apuracao.aliquota,
-        imposto_brl=apuracao.imposto_brl,
-        tem_day_trade=apuracao.tem_day_trade,
-        operacoes_count=len(apuracao.operacoes),
-        vencimento_darf=apuracao.vencimento_darf,
-    )
-
-    pdf_bytes = gerar_relatorio_pdf(resultado, usuario.nome or usuario.email)
-    nome_arquivo = f"darffx_{apuracao.ano}_{apuracao.mes:02d}.pdf"
-
-    return StreamingResponse(
-        BytesIO(pdf_bytes),
-        media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={nome_arquivo}"},
-    )
 
 @router.patch("/{apuracao_id}/ptax")
 def atualizar_ptax(
@@ -219,70 +278,140 @@ def atualizar_ptax(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_current_user),
 ):
-    """Permite o usuário informar o PTAX manualmente caso a API do BCB falhe."""
-    apuracao = db.query(Apuracao).filter_by(
-        id=apuracao_id, user_id=usuario.id
-    ).first()
+    apuracao = db.query(Apuracao).filter_by(id=apuracao_id, user_id=usuario.id).first()
     if not apuracao:
         raise HTTPException(404, "Apuração não encontrada.")
-
     apuracao.ptax = ptax
-    apuracao.ganho_brl = apuracao.ganho_usd * ptax
+    apuracao.ganho_brl = round(apuracao.ganho_usd * ptax, 2)
     carry = apuracao.carry_fwd_brl or 0.0
-    base = max(0.0, apuracao.ganho_brl - carry) if apuracao.ganho_brl > 0 else 0.0
+    base  = round(max(0.0, apuracao.ganho_brl - carry), 2) if apuracao.ganho_brl > 0 else 0.0
     apuracao.base_ir_brl = base
-    apuracao.imposto_brl = base * apuracao.aliquota if base > 0 else 0.0
+    apuracao.imposto_brl = round(base * apuracao.aliquota, 2)
     db.commit()
-    return _apuracao_to_dict(apuracao)
+    _recalcular_anual(db, usuario.id, apuracao.ano)
+    db.commit()
+    return _mensal_to_dict(apuracao)
 
-@router.delete("/{apuracao_id}")
-def deletar_apuracao(
+
+@router.get("/{apuracao_id}/pdf")
+def download_pdf(
     apuracao_id: str,
     db: Session = Depends(get_db),
     usuario: User = Depends(get_current_user),
 ):
-    """Remove uma apuração e suas operações para permitir reprocessamento."""
-    apuracao = db.query(Apuracao).filter_by(
-        id=apuracao_id, user_id=usuario.id
-    ).first()
+    apuracao = db.query(Apuracao).filter_by(id=apuracao_id, user_id=usuario.id).first()
     if not apuracao:
         raise HTTPException(404, "Apuração não encontrada.")
-    db.query(Operacao).filter_by(apuracao_id=apuracao_id).delete()
-    db.delete(apuracao)
-    db.commit()
-    return {"ok": True}
 
-@router.patch("/{apuracao_id}/pago")
-def marcar_pago(
-    apuracao_id: str,
-    db: Session = Depends(get_db),
-    usuario: User = Depends(get_current_user),
-):
-    apuracao = db.query(Apuracao).filter_by(
-        id=apuracao_id, user_id=usuario.id
-    ).first()
-    if not apuracao:
-        raise HTTPException(404, "Apuração não encontrada.")
-    apuracao.darf_pago = True
-    db.commit()
-    return {"ok": True}
+    from ..services.calculo_ir import ResultadoMensal
+    resultado = ResultadoMensal(
+        mes=apuracao.mes, ano=apuracao.ano,
+        ganho_usd=apuracao.ganho_usd, ptax=apuracao.ptax or 0,
+        ganho_brl=apuracao.ganho_brl,
+        carry_fwd_brl=apuracao.carry_fwd_brl or 0,
+        base_tributavel_brl=apuracao.base_ir_brl or 0,
+        aliquota=apuracao.aliquota, imposto_brl=apuracao.imposto_brl,
+        tem_day_trade=apuracao.tem_day_trade,
+        operacoes_count=len(apuracao.operacoes),
+        depositos_usd=apuracao.depositos_usd or 0,
+        saques_usd=apuracao.saques_usd or 0,
+        vencimento_darf=apuracao.vencimento_darf,
+    )
+    pdf_bytes = gerar_relatorio_pdf(resultado, usuario.nome or usuario.email)
+    nome = f"darffx_{apuracao.ano}_{apuracao.mes:02d}.pdf"
+    return StreamingResponse(BytesIO(pdf_bytes), media_type="application/pdf",
+                             headers={"Content-Disposition": f"attachment; filename={nome}"})
+
+
+# ── HELPERS INTERNOS ──────────────────────────────────────────────────────────
+
+def _recalcular_anual(db: Session, user_id: str, ano: int):
+    """Recalcula (ou cria) o registro ApuracaoAnual a partir dos meses existentes."""
+    from ..services.calculo_ir import calcular_ir_anual, ResultadoMensal
+
+    meses_db = (
+        db.query(Apuracao)
+        .filter_by(user_id=user_id, ano=ano)
+        .order_by(Apuracao.mes)
+        .all()
+    )
+    if not meses_db:
+        return
+
+    # Carry forward de anos anteriores (anos com prejuízo)
+    anos_anteriores = (
+        db.query(ApuracaoAnual)
+        .filter_by(user_id=user_id)
+        .filter(ApuracaoAnual.ano < ano)
+        .order_by(ApuracaoAnual.ano)
+        .all()
+    )
+    prejuizo_acum = 0.0
+    for ap in anos_anteriores:
+        if ap.lucro_brl < 0:
+            prejuizo_acum += abs(ap.lucro_brl)
+        elif ap.lucro_brl > 0:
+            prejuizo_acum = max(0.0, prejuizo_acum - ap.lucro_brl)
+
+    # Converte registros DB em ResultadoMensal simples
+    meses_resultado = [
+        ResultadoMensal(
+            mes=m.mes, ano=m.ano,
+            ganho_usd=m.ganho_usd or 0,
+            ptax=m.ptax or 0,
+            ganho_brl=m.ganho_brl or 0,
+            carry_fwd_brl=m.carry_fwd_brl or 0,
+            base_tributavel_brl=m.base_ir_brl or 0,
+            aliquota=m.aliquota or 0.15,
+            imposto_brl=m.imposto_brl or 0,
+            tem_day_trade=m.tem_day_trade or False,
+            operacoes_count=len(m.operacoes),
+            depositos_usd=m.depositos_usd or 0,
+            saques_usd=m.saques_usd or 0,
+            vencimento_darf=m.vencimento_darf,
+        )
+        for m in meses_db
+    ]
+
+    resultado = calcular_ir_anual(meses_resultado, ano, prejuizo_acum)
+
+    anual = db.query(ApuracaoAnual).filter_by(user_id=user_id, ano=ano).first()
+    if not anual:
+        anual = ApuracaoAnual(id=str(uuid.uuid4()), user_id=user_id, ano=ano)
+        db.add(anual)
+
+    anual.lucro_usd             = resultado.lucro_usd
+    anual.lucro_brl             = resultado.lucro_brl
+    anual.prejuizo_anterior_brl = resultado.prejuizo_anterior_brl
+    anual.base_tributavel_brl   = resultado.base_tributavel_brl
+    anual.aliquota              = resultado.aliquota
+    anual.imposto_brl           = resultado.imposto_brl
+    anual.depositos_usd         = resultado.depositos_usd
+    anual.saques_usd            = resultado.saques_usd
+    anual.vencimento_darf       = resultado.vencimento_darf
+
+    # Vincula meses ao registro anual
+    for m in meses_db:
+        m.apuracao_anual_id = anual.id
+
+
+def _calcular_carry_forward(apuracoes: list) -> float:
+    acum = 0.0
+    for a in apuracoes:
+        if a.ganho_brl < 0:
+            acum += abs(a.ganho_brl)
+        elif a.ganho_brl > 0:
+            acum = max(0.0, acum - a.ganho_brl)
+    return acum
+
 
 def _verificar_plano(usuario, db: Session):
-    """Verifica se o usuário pode fazer upload conforme seu plano."""
-    # Admin e planos pagos não expirados: liberado
     if usuario.email == ADMIN_EMAIL or usuario.plano == "admin":
         return
-
-    # Planos pagos: verifica expiração
     if usuario.plano in ("mensal", "anual"):
         if usuario.plano_expiracao and usuario.plano_expiracao < datetime.utcnow():
-            raise HTTPException(
-                402,
-                "Seu plano expirou. Renove em felixunai@gmail.com ou acesse o painel para reativar."
-            )
+            raise HTTPException(402, "Seu plano expirou. Renove para continuar.")
         return
-
-    # Plano free: máximo 1 mês de apuração
     count = db.query(Apuracao).filter_by(user_id=usuario.id).count()
     if count >= 1:
         raise HTTPException(
@@ -292,34 +421,59 @@ def _verificar_plano(usuario, db: Session):
         )
 
 
-def _apuracao_to_dict(a: Apuracao, incluir_operacoes=False) -> dict:
+def _r2(v) -> float:
+    return round(v or 0, 2)
+
+
+def _anual_to_dict(a: ApuracaoAnual) -> dict:
+    return {
+        "id": a.id,
+        "ano": a.ano,
+        "lucro_usd": _r2(a.lucro_usd),
+        "lucro_brl": _r2(a.lucro_brl),
+        "prejuizo_anterior_brl": _r2(a.prejuizo_anterior_brl),
+        "base_tributavel_brl": _r2(a.base_tributavel_brl),
+        "aliquota": _r2(a.aliquota),
+        "imposto_brl": _r2(a.imposto_brl),
+        "depositos_usd": _r2(a.depositos_usd),
+        "saques_usd": _r2(a.saques_usd),
+        "vencimento_darf": a.vencimento_darf.isoformat() if a.vencimento_darf else None,
+        "darf_pago": a.darf_pago,
+        "created_at": a.created_at.isoformat() if a.created_at else None,
+    }
+
+
+def _mensal_to_dict(a: Apuracao, incluir_operacoes=False) -> dict:
     d = {
         "id": a.id,
         "mes": a.mes,
         "ano": a.ano,
-        "ganho_usd": a.ganho_usd,
-        "ptax": a.ptax,
-        "ganho_brl": a.ganho_brl,
-        "carry_fwd_brl": a.carry_fwd_brl or 0.0,
-        "base_ir_brl": a.base_ir_brl or a.ganho_brl,
-        "aliquota": a.aliquota,
-        "imposto_brl": a.imposto_brl,
+        "ganho_usd": _r2(a.ganho_usd),
+        "ptax": round(a.ptax, 4) if a.ptax else None,
+        "ganho_brl": _r2(a.ganho_brl),
+        "carry_fwd_brl": _r2(a.carry_fwd_brl),
+        "base_ir_brl": _r2(a.base_ir_brl),
+        "aliquota": _r2(a.aliquota),
+        "imposto_brl": _r2(a.imposto_brl),
         "tem_day_trade": a.tem_day_trade,
-        "depositos_usd": a.depositos_usd or 0.0,
-        "saques_usd": a.saques_usd or 0.0,
+        "depositos_usd": _r2(a.depositos_usd),
+        "saques_usd": _r2(a.saques_usd),
         "vencimento_darf": a.vencimento_darf.isoformat() if a.vencimento_darf else None,
         "darf_pago": a.darf_pago,
         "created_at": a.created_at.isoformat() if a.created_at else None,
     }
     if incluir_operacoes:
-        d["operacoes"] = [
-            {
-                "adj_no": op.adj_no,
-                "data": op.data.isoformat() if op.data else None,
-                "tipo": op.tipo,
-                "descricao": op.descricao,
-                "valor_usd": op.valor_usd,
-            }
-            for op in a.operacoes
-        ]
+        d["operacoes"] = sorted(
+            [
+                {
+                    "adj_no": op.adj_no,
+                    "data": op.data.isoformat() if op.data else None,
+                    "tipo": op.tipo,
+                    "descricao": op.descricao,
+                    "valor_usd": _r2(op.valor_usd),
+                }
+                for op in a.operacoes
+            ],
+            key=lambda x: x["data"] or ""
+        )
     return d

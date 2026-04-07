@@ -13,12 +13,17 @@ SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 ADMIN_EMAIL = "felixunai@gmail.com"
 
 _MIGRATIONS = [
+    # colunas antigas (compatibilidade)
     "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS carry_fwd_brl FLOAT DEFAULT 0",
     "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS base_ir_brl FLOAT DEFAULT 0",
     "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS depositos_usd FLOAT DEFAULT 0",
     "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS saques_usd FLOAT DEFAULT 0",
     "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS vencimento_darf DATE",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS plano_expiracao TIMESTAMP",
+    # FK para apuração anual
+    "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS apuracao_anual_id VARCHAR REFERENCES apuracoes_anuais(id) ON DELETE SET NULL",
+    # PTAX por operação
+    "ALTER TABLE operacoes ADD COLUMN IF NOT EXISTS ptax_data FLOAT",
 ]
 
 def init_db():

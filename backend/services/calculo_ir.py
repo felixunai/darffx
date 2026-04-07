@@ -1,74 +1,121 @@
 """
-Serviço de cálculo de IR para Forex.
-- Busca PTAX oficial do Banco Central do Brasil
-- Calcula ganho/perda em BRL
-- Aplica alíquota correta (15% swap/spot, 20% day trade)
-- Regra vigente desde jan/2024: sem isenção, tudo tributado
-- Carry Forward: perdas de meses anteriores reduzem base tributável
+Serviço de cálculo de IR para Forex — Lei 14.754/2023 (vigente desde jan/2024).
+
+Regras:
+- Apuração ANUAL (não mensal)
+- Alíquota FIXA de 15% sobre o lucro líquido anual
+- Sem isenção de R$ 20.000
+- Compensação de prejuízos de anos anteriores
+- PTAX: cotação de venda do dólar do último dia útil do mês de cada operação
+- Declaração como "Aplicações financeiras no exterior"
+- Vencimento: último dia útil de maio do ano seguinte (prazo IRPF)
 """
 import re
 import httpx
 from datetime import date, timedelta
 from calendar import monthrange
 from typing import Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections import defaultdict
+
+ALIQUOTA_FIXA = 0.15  # 15% flat — Lei 14.754/2023
+
+
+# ── DATACLASSES ──────────────────────────────────────────────────────────────
 
 @dataclass
 class ResultadoMensal:
+    """Breakdown mensal para referência (não gera DARF próprio)."""
     mes: int
     ano: int
     ganho_usd: float
     ptax: float
     ganho_brl: float
-    carry_fwd_brl: float        # perdas acumuladas de meses anteriores
-    base_tributavel_brl: float  # ganho_brl - carry_fwd_brl (base real do imposto)
+    carry_fwd_brl: float
+    base_tributavel_brl: float
     aliquota: float
     imposto_brl: float
     tem_day_trade: bool
     operacoes_count: int
+    depositos_usd: float
+    saques_usd: float
     vencimento_darf: Optional[date]
 
-ALIQUOTA_NORMAL    = 0.15   # 15% — operações normais
-ALIQUOTA_DAY_TRADE = 0.20   # 20% — day trade
+
+@dataclass
+class ResultadoAnual:
+    """Resultado anual consolidado — base real de tributação (Lei 14.754/2023)."""
+    ano: int
+    # P&L de trading
+    lucro_usd: float
+    lucro_brl: float
+    # Compensação
+    prejuizo_anterior_brl: float
+    base_tributavel_brl: float
+    # Imposto
+    aliquota: float
+    imposto_brl: float
+    # Fluxos (para declaração como Aplicações Financeiras no Exterior)
+    depositos_usd: float
+    saques_usd: float
+    # Metadados
+    operacoes_count: int
+    vencimento_darf: date
+    breakdown_mensal: list = field(default_factory=list)
+
+
+# ── PTAX ─────────────────────────────────────────────────────────────────────
 
 async def buscar_ptax(mes: int, ano: int) -> Optional[float]:
-    """
-    Busca a PTAX de fechamento do último dia útil do mês.
-    Fonte: API oficial do Banco Central do Brasil.
-    Retenta até 7 dias úteis anteriores caso não haja cotação.
-    """
+    """PTAX de fechamento do último dia útil do mês."""
     ultimo_dia = date(ano, mes, monthrange(ano, mes)[1])
-
     async with httpx.AsyncClient(timeout=10.0) as client:
         tentativas = 0
         delta = 0
         while tentativas < 7:
             dia = ultimo_dia - timedelta(days=delta)
             delta += 1
-            # pula fins de semana
             if dia.weekday() >= 5:
                 continue
             tentativas += 1
-
-            data_str = dia.strftime("%m-%d-%Y")
-            url = (
-                "https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/"
-                f"CotacaoDolarDia(dataCotacao=@dataCotacao)"
-                f"?@dataCotacao='{data_str}'&$format=json&$select=cotacaoVenda"
-            )
-
-            try:
-                resp = await client.get(url)
-                if resp.status_code == 200:
-                    dados = resp.json()
-                    valores = dados.get("value", [])
-                    if valores:
-                        return float(valores[0]["cotacaoVenda"])
-            except (httpx.RequestError, KeyError, ValueError):
-                continue
-
+            ptax = await _buscar_ptax_dia(client, dia)
+            if ptax:
+                return ptax
     return None
+
+
+async def buscar_ptax_por_data(data_op: date) -> Optional[float]:
+    """PTAX de um dia específico (para depósitos/saques)."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for delta in range(0, 5):
+            dia = data_op - timedelta(days=delta)
+            if dia.weekday() >= 5:
+                continue
+            ptax = await _buscar_ptax_dia(client, dia)
+            if ptax:
+                return ptax
+    return None
+
+
+async def _buscar_ptax_dia(client: httpx.AsyncClient, dia: date) -> Optional[float]:
+    data_str = dia.strftime("%m-%d-%Y")
+    url = (
+        "https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/"
+        f"CotacaoDolarDia(dataCotacao=@dataCotacao)"
+        f"?@dataCotacao='{data_str}'&$format=json&$select=cotacaoVenda"
+    )
+    try:
+        resp = await client.get(url)
+        if resp.status_code == 200:
+            valores = resp.json().get("value", [])
+            if valores:
+                return float(valores[0]["cotacaoVenda"])
+    except (httpx.RequestError, KeyError, ValueError):
+        pass
+    return None
+
+
+# ── CÁLCULO MENSAL (breakdown / detalhe) ─────────────────────────────────────
 
 def calcular_ir_mensal(
     operacoes: list,
@@ -78,69 +125,123 @@ def calcular_ir_mensal(
     carry_fwd_brl: float = 0.0,
 ) -> ResultadoMensal:
     """
-    Recebe lista de Operacao (OPENED + CLOSED), PTAX, mês/ano e carry forward.
-    Retorna ResultadoMensal com todos os valores calculados.
-
-    Regra 2024+:
-    - Para AvaOptions: P&L = soma de OPENED (prêmios) + CLOSED (liquidação)
-    - Carry Forward: perdas de meses anteriores reduzem a base tributável
-    - Alíquota = 15% normal / 20% se houver day trade confirmado
-    - Sem isenção
+    Breakdown mensal para exibição de detalhe.
+    O imposto NÃO é mensal — é apenas uma referência proporcional.
+    A tributação real é feita no ResultadoAnual.
     """
     ops_mes = [
         op for op in operacoes
         if op.data.month == mes and op.data.year == ano
         and op.tipo in ("CLOSED", "OPENED")
     ]
+    depositos_usd = round(sum(
+        op.valor_usd for op in operacoes
+        if op.data.month == mes and op.data.year == ano
+        and op.tipo == "DEPOSIT" and op.valor_usd > 0
+    ), 2)
+    saques_usd = round(sum(
+        abs(op.valor_usd) for op in operacoes
+        if op.data.month == mes and op.data.year == ano
+        and op.tipo == "WITHDRAWAL"
+    ), 2)
 
-    ganho_usd = sum(op.valor_usd for op in ops_mes)
+    ganho_usd = round(sum(op.valor_usd for op in ops_mes), 2)
     tem_day_trade = _detectar_day_trade(ops_mes)
-    aliquota = ALIQUOTA_DAY_TRADE if tem_day_trade else ALIQUOTA_NORMAL
+    ganho_brl = round(ganho_usd * ptax, 2)
 
-    ganho_brl = ganho_usd * ptax
-
-    # Carry Forward: só aplica se houve ganho real
     if ganho_brl > 0 and carry_fwd_brl > 0:
-        base_tributavel = max(0.0, ganho_brl - carry_fwd_brl)
+        base = round(max(0.0, ganho_brl - carry_fwd_brl), 2)
     elif ganho_brl > 0:
-        base_tributavel = ganho_brl
+        base = ganho_brl
     else:
-        base_tributavel = 0.0
-
-    imposto_brl = base_tributavel * aliquota if base_tributavel > 0 else 0.0
-    venc = _vencimento_darf(mes, ano)
+        base = 0.0
 
     return ResultadoMensal(
         mes=mes, ano=ano,
-        ganho_usd=ganho_usd,
-        ptax=ptax,
-        ganho_brl=ganho_brl,
-        carry_fwd_brl=carry_fwd_brl,
-        base_tributavel_brl=base_tributavel,
-        aliquota=aliquota,
-        imposto_brl=imposto_brl,
+        ganho_usd=ganho_usd, ptax=ptax, ganho_brl=ganho_brl,
+        carry_fwd_brl=round(carry_fwd_brl, 2),
+        base_tributavel_brl=base,
+        aliquota=ALIQUOTA_FIXA,
+        imposto_brl=round(base * ALIQUOTA_FIXA, 2),
         tem_day_trade=tem_day_trade,
-        operacoes_count=len([op for op in ops_mes if op.tipo == "CLOSED"]),
-        vencimento_darf=venc,
+        operacoes_count=len([o for o in ops_mes if o.tipo == "CLOSED"]),
+        depositos_usd=depositos_usd,
+        saques_usd=saques_usd,
+        vencimento_darf=_vencimento_darf_mensal(mes, ano),
     )
 
-def _vencimento_darf(mes: int, ano: int) -> date:
-    """Último dia útil do mês seguinte ao mês de apuração."""
+
+# ── CÁLCULO ANUAL (Lei 14.754/2023) ──────────────────────────────────────────
+
+def calcular_ir_anual(
+    meses: list[ResultadoMensal],
+    ano: int,
+    prejuizo_anterior_brl: float = 0.0,
+) -> ResultadoAnual:
+    """
+    Consolida os meses do ano e calcula o imposto anual.
+    Alíquota fixa 15% — sem isenção, sem tabela progressiva.
+    Compensação de prejuízos de anos anteriores permitida.
+    """
+    lucro_usd = round(sum(m.ganho_usd for m in meses), 2)
+    lucro_brl = round(sum(m.ganho_brl for m in meses), 2)
+    depositos_usd = round(sum(m.depositos_usd for m in meses), 2)
+    saques_usd    = round(sum(m.saques_usd for m in meses), 2)
+    ops_count     = sum(m.operacoes_count for m in meses)
+
+    # Compensação de prejuízo
+    prejuizo_anterior_brl = round(max(0.0, prejuizo_anterior_brl), 2)
+    if lucro_brl > 0 and prejuizo_anterior_brl > 0:
+        base = round(max(0.0, lucro_brl - prejuizo_anterior_brl), 2)
+    elif lucro_brl > 0:
+        base = lucro_brl
+    else:
+        base = 0.0
+
+    imposto = round(base * ALIQUOTA_FIXA, 2)
+
+    return ResultadoAnual(
+        ano=ano,
+        lucro_usd=lucro_usd,
+        lucro_brl=lucro_brl,
+        prejuizo_anterior_brl=prejuizo_anterior_brl,
+        base_tributavel_brl=base,
+        aliquota=ALIQUOTA_FIXA,
+        imposto_brl=imposto,
+        depositos_usd=depositos_usd,
+        saques_usd=saques_usd,
+        operacoes_count=ops_count,
+        vencimento_darf=_vencimento_darf_anual(ano),
+        breakdown_mensal=meses,
+    )
+
+
+# ── HELPERS ───────────────────────────────────────────────────────────────────
+
+def _vencimento_darf_anual(ano: int) -> date:
+    """Último dia útil de maio do ano seguinte (prazo IRPF — Lei 14.754/2023)."""
+    ultimo_maio = date(ano + 1, 5, 31)
+    while ultimo_maio.weekday() >= 5:
+        ultimo_maio -= timedelta(days=1)
+    return ultimo_maio
+
+
+def _vencimento_darf_mensal(mes: int, ano: int) -> date:
+    """Último dia útil do mês seguinte (mantido para compatibilidade de exibição)."""
     if mes == 12:
         prox_mes, prox_ano = 1, ano + 1
     else:
         prox_mes, prox_ano = mes + 1, ano
+    ultimo = date(prox_ano, prox_mes, monthrange(prox_ano, prox_mes)[1])
+    while ultimo.weekday() >= 5:
+        ultimo -= timedelta(days=1)
+    return ultimo
 
-    ultimo_dia = date(prox_ano, prox_mes, monthrange(prox_ano, prox_mes)[1])
-    while ultimo_dia.weekday() >= 5:
-        ultimo_dia -= timedelta(days=1)
-    return ultimo_dia
 
 def _detectar_day_trade(operacoes: list) -> bool:
     """
-    Detecta day trade: MESMO número de ordem com OPENED e CLOSED no mesmo dia.
-    AvaTrade usa números de ordem diferentes para abertura e fechamento, então
-    isso só dispara em casos reais de abertura+fechamento com mesmo ID no dia.
+    Day trade: mesmo número de ordem com OPENED e CLOSED no mesmo dia.
+    Evita falsos positivos — AvaTrade usa números distintos para abertura/fechamento.
     """
     por_ordem_dia: dict = defaultdict(set)
     for op in operacoes:
@@ -150,10 +251,11 @@ def _detectar_day_trade(operacoes: list) -> bool:
         chave = (m.group(1), op.data.date())
         por_ordem_dia[chave].add(op.tipo)
 
-    for tipos in por_ordem_dia.values():
-        if "OPENED" in tipos and "CLOSED" in tipos:
-            return True
-    return False
+    return any(
+        "OPENED" in tipos and "CLOSED" in tipos
+        for tipos in por_ordem_dia.values()
+    )
+
 
 def nome_mes(mes: int) -> str:
     meses = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
