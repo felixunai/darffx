@@ -145,9 +145,10 @@ export default function Dashboard() {
                     <XAxis dataKey="name" tick={{ fill:'var(--muted)', fontSize:12 }} axisLine={false} tickLine={false} />
                     <YAxis hide />
                     <Tooltip
-                      contentStyle={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, fontSize:12 }}
+                      contentStyle={{ background:'#1a2235', border:'1px solid rgba(255,255,255,0.12)', borderRadius:8, fontSize:12, color:'#e8edf5' }}
                       formatter={(v) => [fmtBRL(v), 'Imposto']}
-                      labelStyle={{ color:'var(--muted)' }}
+                      labelStyle={{ color:'#8899aa' }}
+                      itemStyle={{ color:'#e8edf5' }}
                     />
                     <Bar dataKey="imposto" radius={[6,6,0,0]}>
                       {chartAnual.map((e, i) => (
@@ -195,9 +196,10 @@ export default function Dashboard() {
                       <XAxis dataKey="name" tick={{ fill:'var(--muted)', fontSize:11 }} axisLine={false} tickLine={false} />
                       <YAxis hide />
                       <Tooltip
-                        contentStyle={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, fontSize:12 }}
+                        contentStyle={{ background:'#1a2235', border:'1px solid rgba(255,255,255,0.12)', borderRadius:8, fontSize:12, color:'#e8edf5' }}
                         formatter={(v) => [fmtBRL(v), 'Resultado']}
-                        labelStyle={{ color:'var(--muted)' }}
+                        labelStyle={{ color:'#8899aa' }}
+                        itemStyle={{ color:'#e8edf5' }}
                       />
                       <Bar dataKey="lucro" radius={[4,4,0,0]}>
                         {chartMensal.map((e, i) => (
