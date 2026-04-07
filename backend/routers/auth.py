@@ -18,6 +18,66 @@ from ..config import settings
 router = APIRouter(prefix="/auth", tags=["auth"])
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+
+def _html_recuperacao(nome: str | None, link: str) -> str:
+    saudacao = f"Olá{', ' + nome if nome else ''}!"
+    return f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
+      <h2 style="color:#00e5a0">DarfFX</h2>
+      <p>{saudacao}</p>
+      <p>Recebemos uma solicitação para redefinir sua senha.</p>
+      <p style="margin:24px 0">
+        <a href="{link}" style="background:#00e5a0;color:#000;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700">
+          Redefinir senha →
+        </a>
+      </p>
+      <p style="color:#999;font-size:13px">Este link expira em 2 horas. Se você não solicitou, ignore este e-mail.</p>
+    </div>
+    """
+
+
+def _enviar_email_recuperacao(to_email: str, nome: str | None, link: str) -> None:
+    """Tenta Resend primeiro; se não configurado/falhar, tenta Gmail SMTP."""
+    html = _html_recuperacao(nome, link)
+    assunto = "DarfFX — Recuperação de senha"
+
+    # --- Resend ---
+    if settings.RESEND_API_KEY:
+        try:
+            import resend
+            resend.api_key = settings.RESEND_API_KEY
+            result = resend.Emails.send({
+                "from": settings.RESEND_FROM_EMAIL,
+                "to": to_email,
+                "subject": assunto,
+                "html": html,
+            })
+            logger.info("E-mail enviado via Resend: %s → %s", to_email, result)
+            return
+        except Exception as e:
+            logger.error("Resend falhou (%s) — tentando Gmail SMTP", e)
+
+    # --- Gmail SMTP ---
+    if settings.SMTP_USER and settings.SMTP_PASSWORD:
+        try:
+            import smtplib
+            from email.mime.multipart import MIMEMultipart
+            from email.mime.text import MIMEText
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = assunto
+            msg["From"] = f"DarfFX <{settings.SMTP_USER}>"
+            msg["To"] = to_email
+            msg.attach(MIMEText(html, "html"))
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+                smtp.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                smtp.sendmail(settings.SMTP_USER, to_email, msg.as_string())
+            logger.info("E-mail enviado via Gmail SMTP para %s", to_email)
+            return
+        except Exception as e:
+            logger.error("Gmail SMTP falhou: %s", e)
+
+    logger.warning("Nenhum provedor de e-mail configurado. E-mail não enviado para %s", to_email)
+
 class RegisterIn(BaseModel):
     email: EmailStr
     senha: str
@@ -80,34 +140,8 @@ def solicitar_reset(data: SolicitarResetIn, db: Session = Depends(get_db)):
     db.add(rt)
     db.commit()
 
-    if not settings.RESEND_API_KEY:
-        logger.warning("RESEND_API_KEY não configurado — e-mail de recuperação não enviado para %s", user.email)
-    else:
-        try:
-            import resend
-            resend.api_key = settings.RESEND_API_KEY
-            link = f"{settings.FRONTEND_URL}/nova-senha?token={token}"
-            result = resend.Emails.send({
-                "from": settings.RESEND_FROM_EMAIL,
-                "to": user.email,
-                "subject": "DarfFX — Recuperação de senha",
-                "html": f"""
-                <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
-                  <h2 style="color:#00e5a0">DarfFX</h2>
-                  <p>Olá{', ' + user.nome if user.nome else ''}!</p>
-                  <p>Recebemos uma solicitação para redefinir sua senha.</p>
-                  <p style="margin:24px 0">
-                    <a href="{link}" style="background:#00e5a0;color:#000;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700">
-                      Redefinir senha →
-                    </a>
-                  </p>
-                  <p style="color:#999;font-size:13px">Este link expira em 2 horas. Se você não solicitou, ignore este e-mail.</p>
-                </div>
-                """,
-            })
-            logger.info("E-mail de recuperação enviado: %s → id=%s", user.email, result)
-        except Exception as e:
-            logger.error("Falha ao enviar e-mail de recuperação para %s: %s", user.email, e)
+    link = f"{settings.FRONTEND_URL}/nova-senha?token={token}"
+    _enviar_email_recuperacao(user.email, user.nome, link)
 
     return {"ok": True, "msg": "Se o e-mail existir, você receberá as instruções."}
 

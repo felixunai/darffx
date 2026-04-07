@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str = ""
     RESEND_FROM_EMAIL: str = "DarfFX <noreply@darffx.com.br>"
     FRONTEND_URL: str = "http://localhost:5173"
+    # Gmail SMTP (alternativa gratuita sem domínio próprio)
+    SMTP_USER: str = ""      # seu Gmail: felixunai@gmail.com
+    SMTP_PASSWORD: str = ""  # senha de app gerada no Google
 
     # Preços em centavos (BRL)
     PRECO_ACESSO_CENTAVOS: int = 6990   # R$ 69,90 — acesso anual (expira 31/12 do ano vigente)
