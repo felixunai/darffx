@@ -13,6 +13,7 @@ export default function Apuracao() {
   const [loading, setLoading] = useState(true)
   const [ptaxEdit, setPtaxEdit] = useState('')
   const [salvando, setSalvando] = useState(false)
+  const [deletando, setDeletando] = useState(false)
 
   useEffect(() => {
     api.get(`/apuracao/${id}`)
@@ -34,6 +35,19 @@ export default function Apuracao() {
   const marcarPago = async () => {
     await api.patch(`/apuracao/${id}/pago`)
     setDados(d => ({ ...d, darf_pago: true }))
+  }
+
+  const deletar = async () => {
+    const label = `${MESES[dados.mes-1]}/${dados.ano}`
+    if (!window.confirm(`Excluir apuração de ${label}? Os dados serão removidos e você poderá fazer novo upload.`)) return
+    setDeletando(true)
+    try {
+      await api.delete(`/apuracao/${id}`)
+      navigate('/')
+    } catch {
+      alert('Erro ao excluir. Tente novamente.')
+      setDeletando(false)
+    }
   }
 
   const salvarPtax = async () => {
@@ -65,7 +79,7 @@ export default function Apuracao() {
             </button>
             <h1 style={{ fontSize:24 }}>{MESES[dados.mes-1]} / {dados.ano}</h1>
           </div>
-          <div style={{ display:'flex', gap:10 }}>
+          <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
             {!dados.darf_pago && dados.imposto_brl > 0 && (
               <button className="btn btn-ghost" onClick={marcarPago}>
                 ✓ Marcar DARF como pago
@@ -73,6 +87,14 @@ export default function Apuracao() {
             )}
             <button className="btn btn-primary" onClick={baixarPdf}>
               ↓ Baixar Relatório PDF
+            </button>
+            <button
+              className="btn btn-ghost"
+              style={{ color:'var(--danger)', borderColor:'var(--danger)' }}
+              onClick={deletar}
+              disabled={deletando}
+            >
+              {deletando ? <span className="spinner" style={{width:14,height:14}} /> : 'Excluir apuração'}
             </button>
           </div>
         </div>

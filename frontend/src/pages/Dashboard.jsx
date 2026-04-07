@@ -19,6 +19,7 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const [apuracoes, setApuracoes] = useState([])
   const [loading,   setLoading]   = useState(true)
+  const [deletando, setDeletando] = useState(null)
 
   useEffect(() => {
     api.get('/apuracao/')
@@ -26,6 +27,20 @@ export default function Dashboard() {
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [])
+
+  const deletar = async (a) => {
+    const label = `${MESES[a.mes-1]}/${a.ano}`
+    if (!window.confirm(`Excluir apuração de ${label}? Os dados serão removidos e você poderá fazer novo upload.`)) return
+    setDeletando(a.id)
+    try {
+      await api.delete(`/apuracao/${a.id}`)
+      setApuracoes(prev => prev.filter(x => x.id !== a.id))
+    } catch {
+      alert('Erro ao excluir. Tente novamente.')
+    } finally {
+      setDeletando(null)
+    }
+  }
 
   const totalImposto = apuracoes.reduce((s, a) => s + (a.imposto_brl || 0), 0)
   const totalGanho   = apuracoes.reduce((s, a) => s + (a.ganho_brl  || 0), 0)
@@ -127,13 +142,23 @@ export default function Dashboard() {
                       }
                     </td>
                     <td>
-                      <button
-                        className="btn btn-ghost"
-                        style={{ padding:'6px 14px', fontSize:12 }}
-                        onClick={() => navigate(`/apuracao/${a.id}`)}
-                      >
-                        Ver
-                      </button>
+                      <div style={{ display:'flex', gap:8 }}>
+                        <button
+                          className="btn btn-ghost"
+                          style={{ padding:'6px 14px', fontSize:12 }}
+                          onClick={() => navigate(`/apuracao/${a.id}`)}
+                        >
+                          Ver
+                        </button>
+                        <button
+                          className="btn btn-ghost"
+                          style={{ padding:'6px 14px', fontSize:12, color:'var(--danger)', borderColor:'var(--danger)' }}
+                          onClick={() => deletar(a)}
+                          disabled={deletando === a.id}
+                        >
+                          {deletando === a.id ? <span className="spinner" style={{width:12,height:12}} /> : 'Limpar'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

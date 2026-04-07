@@ -187,6 +187,23 @@ def atualizar_ptax(
     db.commit()
     return _apuracao_to_dict(apuracao)
 
+@router.delete("/{apuracao_id}")
+def deletar_apuracao(
+    apuracao_id: str,
+    db: Session = Depends(get_db),
+    usuario: User = Depends(get_current_user),
+):
+    """Remove uma apuração e suas operações para permitir reprocessamento."""
+    apuracao = db.query(Apuracao).filter_by(
+        id=apuracao_id, user_id=usuario.id
+    ).first()
+    if not apuracao:
+        raise HTTPException(404, "Apuração não encontrada.")
+    db.query(Operacao).filter_by(apuracao_id=apuracao_id).delete()
+    db.delete(apuracao)
+    db.commit()
+    return {"ok": True}
+
 @router.patch("/{apuracao_id}/pago")
 def marcar_pago(
     apuracao_id: str,
