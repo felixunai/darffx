@@ -11,13 +11,42 @@ export default function Admin() {
   const [loading,  setLoading]  = useState(true)
   const [salvando, setSalvando] = useState(null)
   const [busca,    setBusca]    = useState('')
+  const [promo,    setPromo]    = useState(null)
+  const [promoPreco, setPromoPreco] = useState('')
+  const [salvandoPromo, setSalvandoPromo] = useState(false)
 
   useEffect(() => {
-    Promise.all([api.get('/admin/stats'), api.get('/admin/users')])
-      .then(([s, u]) => { setStats(s.data); setUsers(u.data) })
+    Promise.all([
+      api.get('/admin/stats'),
+      api.get('/admin/users'),
+      api.get('/admin/config/promo'),
+    ])
+      .then(([s, u, p]) => {
+        setStats(s.data)
+        setUsers(u.data)
+        setPromo(p.data)
+        setPromoPreco((p.data.preco_centavos / 100).toFixed(2).replace('.', ','))
+      })
       .catch(e => alert('Erro ao carregar dados: ' + (e.response?.data?.detail || e.message)))
       .finally(() => setLoading(false))
   }, [])
+
+  const salvarPromo = async (novoAtivo) => {
+    setSalvandoPromo(true)
+    try {
+      const centavos = Math.round(parseFloat(promoPreco.replace(',', '.')) * 100)
+      if (isNaN(centavos) || centavos < 100) { alert('Valor inválido.'); return }
+      const { data } = await api.patch('/admin/config/promo', {
+        ativo: novoAtivo ?? promo.ativo,
+        preco_centavos: centavos,
+      })
+      setPromo(data)
+    } catch(e) {
+      alert('Erro: ' + (e.response?.data?.detail || e.message))
+    } finally {
+      setSalvandoPromo(false)
+    }
+  }
 
   const alterarPlano = async (userId, plano) => {
     setSalvando(userId)
@@ -182,6 +211,88 @@ export default function Admin() {
               <PlanoCard nome="Admin" preco="Interno" desc="Acesso total · sem restrições · sem expiração" cor={COR_PLANO.admin} />
             </div>
           </div>
+
+          {/* PLANO PROMOCIONAL */}
+          {promo !== null && (
+            <div className="card" style={{
+              marginTop:24,
+              border: promo.ativo ? '2px solid rgba(255,179,71,0.5)' : '1px solid var(--border)',
+            }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20, flexWrap:'wrap', gap:12 }}>
+                <div>
+                  <h3 style={{ fontSize:15, marginBottom:4 }}>🏷️ Plano Promocional</h3>
+                  <p style={{ fontSize:13, color:'var(--muted)' }}>
+                    Mesmo acesso do plano pago com preço especial.
+                    Quando ativo, aparece na página de upgrade para todos os usuários.
+                  </p>
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <span style={{
+                    fontSize:12, padding:'3px 10px', borderRadius:20, fontWeight:700,
+                    background: promo.ativo ? 'rgba(255,179,71,0.15)' : 'var(--surface2)',
+                    color: promo.ativo ? 'var(--warn)' : 'var(--muted)',
+                    border: `1px solid ${promo.ativo ? 'rgba(255,179,71,0.4)' : 'var(--border)'}`,
+                  }}>
+                    {promo.ativo ? '● ATIVO' : '○ INATIVO'}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ display:'flex', alignItems:'flex-end', gap:12, flexWrap:'wrap' }}>
+                <div>
+                  <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:6 }}>
+                    PREÇO PROMOCIONAL (R$)
+                  </label>
+                  <input
+                    type="text"
+                    value={promoPreco}
+                    onChange={e => setPromoPreco(e.target.value)}
+                    placeholder="39,90"
+                    style={{
+                      background:'var(--surface2)', border:'1px solid var(--border)',
+                      borderRadius:8, padding:'8px 14px', color:'var(--text)',
+                      fontSize:16, fontWeight:700, width:120,
+                    }}
+                  />
+                </div>
+                <div style={{ display:'flex', gap:8 }}>
+                  <button
+                    className="btn btn-ghost"
+                    style={{ padding:'8px 18px', fontSize:13 }}
+                    onClick={() => salvarPromo(promo.ativo)}
+                    disabled={salvandoPromo}
+                  >
+                    {salvandoPromo ? <span className="spinner" style={{width:12,height:12}} /> : 'Salvar valor'}
+                  </button>
+                  {promo.ativo ? (
+                    <button
+                      className="btn btn-ghost"
+                      style={{ padding:'8px 18px', fontSize:13, color:'var(--danger)', borderColor:'var(--danger)' }}
+                      onClick={() => salvarPromo(false)}
+                      disabled={salvandoPromo}
+                    >
+                      Desativar promo
+                    </button>
+                  ) : (
+                    <button
+                      className="btn btn-primary"
+                      style={{ padding:'8px 18px', fontSize:13, background:'var(--warn)', borderColor:'var(--warn)', color:'#000' }}
+                      onClick={() => salvarPromo(true)}
+                      disabled={salvandoPromo}
+                    >
+                      Ativar promo
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {promo.ativo && (
+                <div style={{ marginTop:14, padding:'10px 14px', background:'rgba(255,179,71,0.08)', borderRadius:8, fontSize:13, color:'var(--warn)' }}>
+                  ⚠️ Promoção ativa — todos os novos clientes verão <strong>{promo.preco_brl}</strong> na página de upgrade.
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
     </Layout>

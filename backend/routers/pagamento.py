@@ -13,12 +13,20 @@ from datetime import datetime
 import uuid
 
 from ..config import settings
-from ..models.database import ApuracaoAnual, Pagamento, User
+from ..models.database import ApuracaoAnual, Pagamento, User, PromoConfig
 from ..deps import get_db, get_current_user
 
 router = APIRouter(prefix="/pagamento", tags=["pagamento"])
 
-PRECO = settings.PRECO_ACESSO_CENTAVOS   # R$69,90
+PRECO_NORMAL = settings.PRECO_ACESSO_CENTAVOS   # R$69,90
+
+
+def _get_preco_ativo(db: Session) -> tuple[int, bool]:
+    """Retorna (preco_centavos, is_promo). Usa promo se estiver ativa."""
+    promo = db.query(PromoConfig).filter_by(id=1).first()
+    if promo and promo.ativo:
+        return promo.preco_centavos, True
+    return PRECO_NORMAL, False
 
 
 def _get_stripe():
@@ -42,6 +50,20 @@ def _expiracao_ano_vigente() -> datetime:
     return datetime(ano, 12, 31, 23, 59, 59)
 
 
+# ── CONFIG PÚBLICA ────────────────────────────────────────────────────────────
+
+@router.get("/promo")
+def get_promo_publica(db: Session = Depends(get_db)):
+    """Retorna preço ativo (normal ou promo) para exibição na página de upgrade."""
+    preco, is_promo = _get_preco_ativo(db)
+    return {
+        "promo_ativa": is_promo,
+        "preco_centavos": preco,
+        "preco_brl": f"R$ {preco / 100:.2f}".replace(".", ","),
+        "preco_normal_brl": f"R$ {PRECO_NORMAL / 100:.2f}".replace(".", ","),
+    }
+
+
 # ── CHECKOUT ──────────────────────────────────────────────────────────────────
 
 @router.post("/checkout")
@@ -55,17 +77,23 @@ async def checkout(
         raise HTTPException(400, "Você já possui acesso ativo até 31/12.")
 
     ano_atual = datetime.utcnow().year
+    preco, is_promo = _get_preco_ativo(db)
+
     stripe = _get_stripe()
+    nome_produto = f"DarfFX — Acesso Completo {ano_atual}"
+    if is_promo:
+        nome_produto += " 🏷 Oferta Especial"
+
     session = stripe.checkout.Session.create(
         payment_method_types=["card"],
         line_items=[{
             "price_data": {
                 "currency": "brl",
                 "product_data": {
-                    "name": f"DarfFX — Acesso Completo {ano_atual}",
+                    "name": nome_produto,
                     "description": f"Cálculo IR Forex · PTAX automático · Relatório IRPF · Válido até 31/12/{ano_atual}",
                 },
-                "unit_amount": PRECO,
+                "unit_amount": preco,
             },
             "quantity": 1,
         }],
@@ -84,7 +112,7 @@ async def checkout(
         user_id=usuario.id,
         tipo="acesso",
         ano=ano_atual,
-        valor_brl=PRECO / 100,
+        valor_brl=preco / 100,
         stripe_session_id=session.id,
         status="pendente",
     )

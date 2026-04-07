@@ -93,6 +93,14 @@ class Operacao(Base):
     apuracao = relationship("Apuracao", back_populates="operacoes")
 
 
+class PromoConfig(Base):
+    """Configuração do plano promocional (linha única, id=1)."""
+    __tablename__ = "promo_config"
+    id             = Column(Integer, primary_key=True, default=1)
+    ativo          = Column(Boolean, default=False)
+    preco_centavos = Column(Integer, default=3990)   # R$39,90
+
+
 class Pagamento(Base):
     """Registro de pagamentos Stripe."""
     __tablename__ = "pagamentos"

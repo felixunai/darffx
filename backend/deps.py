@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from jose import jwt, JWTError
 
 from .config import settings
-from .models.database import Base, User
+from .models.database import Base, User, PromoConfig
 
 engine = create_engine(settings.DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
@@ -33,6 +33,14 @@ def init_db():
                 conn.commit()
             except Exception:
                 conn.rollback()
+    # Garante que existe uma linha de config de promo
+    db = SessionLocal()
+    try:
+        if not db.query(PromoConfig).filter_by(id=1).first():
+            db.add(PromoConfig(id=1, ativo=False, preco_centavos=3990))
+            db.commit()
+    finally:
+        db.close()
 
 def get_db():
     db = SessionLocal()

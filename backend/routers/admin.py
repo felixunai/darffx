@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from datetime import datetime, timedelta
 from typing import Optional
 
-from ..models.database import User, Apuracao, ApuracaoAnual
+from ..models.database import User, Apuracao, ApuracaoAnual, PromoConfig
 from ..deps import get_db, get_admin_user
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -27,6 +27,10 @@ class AlterarPlanoIn(BaseModel):
 
 class AtivoIn(BaseModel):
     ativo: bool
+
+class PromoIn(BaseModel):
+    ativo: Optional[bool] = None
+    preco_centavos: Optional[int] = None
 
 # ── STATS ─────────────────────────────────────────────────────────────────────
 
@@ -136,6 +140,37 @@ def deletar_user(
     db.delete(u)
     db.commit()
     return {"ok": True}
+
+# ── PROMO CONFIG ──────────────────────────────────────────────────────────────
+
+@router.get("/config/promo")
+def get_promo(db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
+    p = db.query(PromoConfig).filter_by(id=1).first()
+    return _promo_dict(p)
+
+@router.patch("/config/promo")
+def set_promo(
+    body: PromoIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    p = db.query(PromoConfig).filter_by(id=1).first()
+    if body.ativo is not None:
+        p.ativo = body.ativo
+    if body.preco_centavos is not None:
+        if body.preco_centavos < 100:
+            raise HTTPException(400, "Preço mínimo: R$ 1,00 (100 centavos).")
+        p.preco_centavos = body.preco_centavos
+    db.commit()
+    return _promo_dict(p)
+
+def _promo_dict(p: PromoConfig) -> dict:
+    return {
+        "ativo": p.ativo,
+        "preco_centavos": p.preco_centavos,
+        "preco_brl": f"R$ {p.preco_centavos / 100:.2f}".replace(".", ","),
+    }
+
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 
