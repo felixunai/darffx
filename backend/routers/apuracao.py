@@ -22,7 +22,7 @@ import uuid
 from io import BytesIO
 
 from ..services.parser_avatrade import parse_pdf_avatrade
-from ..services.calculo_ir import buscar_ptax, calcular_ir_mensal, calcular_ir_anual
+from ..services.calculo_ir import buscar_ptax_paralelo, calcular_ir_mensal, calcular_ir_anual
 from ..services.gerador_pdf import gerar_relatorio_pdf
 from ..models.database import Apuracao, ApuracaoAnual, Operacao, User
 from ..deps import get_db, get_current_user, ADMIN_EMAIL
@@ -71,7 +71,14 @@ async def upload_extrato(
     )
     acumulado_brl = _calcular_carry_forward(apuracoes_existentes)
 
-    # Processa meses em ordem cronológica
+    # Busca PTAX em paralelo para todos os meses novos (muito mais rápido)
+    meses_novos_keys = [
+        (ano, mes) for (ano, mes) in sorted(por_mes.keys())
+        if not db.query(Apuracao).filter_by(user_id=usuario.id, mes=mes, ano=ano).first()
+    ]
+    ptax_cache = await buscar_ptax_paralelo([(mes, ano) for ano, mes in meses_novos_keys])
+
+    # Processa meses em ordem cronológica (sequencial para carry forward)
     meses_novos: dict = defaultdict(list)   # ano → [ResultadoMensal]
     for (ano, mes), ops in sorted(por_mes.items()):
         existente = db.query(Apuracao).filter_by(
@@ -85,7 +92,7 @@ async def upload_extrato(
                 acumulado_brl = max(0.0, acumulado_brl - existente.ganho_brl)
             continue
 
-        ptax = await buscar_ptax(mes, ano) or 0.0
+        ptax = ptax_cache.get((mes, ano), 0.0)
         resultado = calcular_ir_mensal(ops, ptax, mes, ano, carry_fwd_brl=acumulado_brl)
 
         apuracao = Apuracao(
@@ -143,7 +150,11 @@ async def upload_extrato(
         .order_by(ApuracaoAnual.ano.desc())
         .all()
     )
-    return {"apuracoes_anuais": [_anual_to_dict(a, usuario) for a in anuais]}
+    total_meses = sum(len(v) for v in meses_novos.values())
+    return {
+        "total": total_meses,
+        "apuracoes_anuais": [_anual_to_dict(a, usuario) for a in anuais],
+    }
 
 
 # ── LISTAGEM ANUAL ────────────────────────────────────────────────────────────

@@ -18,11 +18,12 @@ export default function Upload() {
   const inputRef      = useRef()
   const [arquivo, setArquivo]   = useState(null)
   const [dragOver, setDragOver] = useState(false)
-  const [loading,   setLoading]   = useState(false)
-  const [erro,      setErro]      = useState('')
-  const [progresso, setProgresso] = useState('')
-  const [msgIdx,    setMsgIdx]    = useState(0)
-  const [elapsed,   setElapsed]   = useState(0)
+  const [loading,    setLoading]   = useState(false)
+  const [erro,       setErro]      = useState('')
+  const [progresso,  setProgresso] = useState('')
+  const [planLimit,  setPlanLimit] = useState(false)
+  const [msgIdx,     setMsgIdx]    = useState(0)
+  const [elapsed,    setElapsed]   = useState(0)
 
   useEffect(() => {
     if (!loading) { setMsgIdx(0); setElapsed(0); return }
@@ -51,6 +52,7 @@ export default function Upload() {
     setLoading(true)
     setErro('')
     setProgresso('')
+    setPlanLimit(false)
 
     const form = new FormData()
     form.append('arquivo', arquivo)
@@ -62,7 +64,12 @@ export default function Upload() {
       setProgresso(`✅ ${data.total} mês(es) processado(s)! Redirecionando...`)
       setTimeout(() => navigate('/'), 1500)
     } catch (err) {
-      setErro(err.response?.data?.detail || 'Erro ao processar o arquivo.')
+      const detail = err.response?.data?.detail || ''
+      if (detail.startsWith('PLAN_LIMIT')) {
+        setPlanLimit(true)
+      } else {
+        setErro(detail || 'Erro ao processar o arquivo.')
+      }
       setProgresso('')
     } finally {
       setLoading(false)
@@ -125,6 +132,30 @@ export default function Upload() {
           </ol>
         </div>
 
+        {planLimit && (
+          <div style={{
+            background:'linear-gradient(135deg,rgba(0,229,160,0.06),rgba(0,149,255,0.06))',
+            border:'2px solid var(--accent)', borderRadius:16, padding:24, marginTop:16, textAlign:'center'
+          }}>
+            <div style={{ fontSize:32, marginBottom:8 }}>🚀</div>
+            <h3 style={{ fontSize:17, marginBottom:8, fontFamily:'Syne' }}>
+              Você já processou seu extrato gratuito!
+            </h3>
+            <p style={{ color:'var(--muted)', fontSize:14, marginBottom:16, maxWidth:380, margin:'0 auto 16px' }}>
+              Com o <strong style={{color:'var(--accent)'}}>Acesso Completo por R$ 69,90</strong> você pode
+              reprocessar quantas vezes quiser, ver o imposto exato e exportar o relatório para o IRPF.
+              Válido até <strong style={{color:'var(--accent)'}}>31/12/{new Date().getFullYear()}</strong>.
+            </p>
+            <button className="btn btn-primary" style={{ padding:'12px 28px', fontSize:15, borderRadius:12 }}
+              onClick={() => navigate('/upgrade')}>
+              Desbloquear Acesso Completo →
+            </button>
+            <p style={{ fontSize:11, color:'var(--muted)', marginTop:10 }}>
+              Pagamento único · Stripe · Acesso imediato
+            </p>
+          </div>
+        )}
+
         {erro && (
           <div style={{ background:'rgba(255,77,109,0.1)', border:'1px solid var(--danger)', color:'var(--danger)', padding:'12px 16px', borderRadius:10, marginTop:16, fontSize:13 }}>
             {erro}
@@ -148,7 +179,7 @@ export default function Upload() {
                 }} />
               </div>
               <span style={{ fontSize:11, color:'var(--muted)', whiteSpace:'nowrap' }}>
-                {elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed/60)}m${elapsed%60}s`} · ~1-2 min
+                {elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed/60)}m${elapsed%60}s`} · ~30-60s
               </span>
             </div>
           </div>

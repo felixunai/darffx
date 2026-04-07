@@ -11,6 +11,7 @@ Regras:
 - Vencimento: último dia útil de maio do ano seguinte (prazo IRPF)
 """
 import re
+import asyncio
 import httpx
 from datetime import date, timedelta
 from calendar import monthrange
@@ -67,26 +68,45 @@ class ResultadoAnual:
 # ── PTAX ─────────────────────────────────────────────────────────────────────
 
 async def buscar_ptax(mes: int, ano: int) -> Optional[float]:
-    """PTAX de fechamento do último dia útil do mês."""
+    """PTAX de fechamento do último dia útil do mês (cria cliente próprio)."""
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        return await _buscar_ptax_mes(client, mes, ano)
+
+
+async def buscar_ptax_paralelo(
+    meses_anos: list[tuple[int, int]]
+) -> dict[tuple[int, int], float]:
+    """Busca PTAX de vários meses em paralelo com um único cliente HTTP.
+    Retorna dict {(mes, ano): ptax}. Muito mais rápido que chamadas sequenciais."""
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        tasks = [_buscar_ptax_mes(client, mes, ano) for mes, ano in meses_anos]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+    return {
+        (mes, ano): (float(r) if isinstance(r, float) else 0.0)
+        for (mes, ano), r in zip(meses_anos, results)
+    }
+
+
+async def _buscar_ptax_mes(client: httpx.AsyncClient, mes: int, ano: int) -> Optional[float]:
+    """Busca PTAX do último dia útil do mês usando cliente existente."""
     ultimo_dia = date(ano, mes, monthrange(ano, mes)[1])
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        tentativas = 0
-        delta = 0
-        while tentativas < 7:
-            dia = ultimo_dia - timedelta(days=delta)
-            delta += 1
-            if dia.weekday() >= 5:
-                continue
-            tentativas += 1
-            ptax = await _buscar_ptax_dia(client, dia)
-            if ptax:
-                return ptax
+    tentativas = 0
+    delta = 0
+    while tentativas < 7:
+        dia = ultimo_dia - timedelta(days=delta)
+        delta += 1
+        if dia.weekday() >= 5:
+            continue
+        tentativas += 1
+        ptax = await _buscar_ptax_dia(client, dia)
+        if ptax:
+            return ptax
     return None
 
 
 async def buscar_ptax_por_data(data_op: date) -> Optional[float]:
     """PTAX de um dia específico (para depósitos/saques)."""
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=15.0) as client:
         for delta in range(0, 5):
             dia = data_op - timedelta(days=delta)
             if dia.weekday() >= 5:
