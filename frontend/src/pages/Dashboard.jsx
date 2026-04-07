@@ -84,7 +84,8 @@ export default function Dashboard() {
   const totalLucro     = r2(anuais.reduce((s, a) => s + r2(a.lucro_brl),    0))
   const totalDepositos = r2(anuais.reduce((s, a) => s + r2(a.depositos_usd),0))
   const totalSaques    = r2(anuais.reduce((s, a) => s + r2(a.saques_usd),   0))
-  const pendentes      = desbloqueados.filter(a => r2(a.imposto_brl) > 0 && !a.darf_pago).length
+  const pendentes         = desbloqueados.filter(a => r2(a.imposto_brl) > 0 && !a.darf_pago).length
+  const anoSelDesbloqueado = anuais.find(a => a.ano === anoSel)?.desbloqueado ?? false
 
   // Gráfico anual (visão geral)
   const chartAnual = [...anuais].sort((a, b) => a.ano - b.ano).map(a => ({
@@ -136,7 +137,7 @@ export default function Dashboard() {
           </div>
 
           {/* GRÁFICOS */}
-          <div style={{ display:'grid', gridTemplateColumns: anuais.length > 1 ? '1fr 1fr' : '1fr', gap:16, marginBottom:24 }}>
+          <div style={{ display:'grid', gridTemplateColumns: (anuais.length > 1 && anoSelDesbloqueado) ? '1fr 1fr' : '1fr', gap:16, marginBottom:24 }}>
             {/* Gráfico anual */}
             {anuais.length > 1 && (
               <div className="card">
@@ -168,8 +169,8 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Gráfico mensal do ano selecionado */}
-            {anoSel && (
+            {/* Gráfico mensal do ano selecionado — só para desbloqueados */}
+            {anoSel && anoSelDesbloqueado && (
               <div className="card">
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
                   <h3 style={{ fontSize:14, margin:0 }}>
@@ -275,6 +276,7 @@ export default function Dashboard() {
                       </>
                     ) : (
                       <>
+                        <td colSpan={2} style={{ fontSize:12, color:'var(--muted)', textAlign:'center' }}>—</td>
                         <td colSpan={5} style={{ textAlign:'center' }}>
                           <span style={{ fontSize:12, color:'var(--muted)' }}>🔒 Relatório bloqueado</span>
                         </td>

@@ -197,12 +197,8 @@ export default function ApuracaoAnual() {
                   <tr>
                     <th>Mês</th>
                     <th>Resultado (USD)</th>
-                    <th>PTAX</th>
                     <th>Resultado (BRL)</th>
-                    <th>Depósitos</th>
-                    <th>Saques</th>
-                    <th>Operações</th>
-                    <th></th>
+                    {desbloqueado && <><th>PTAX</th><th>Depósitos</th><th>Saques</th><th>Operações</th><th></th></>}
                   </tr>
                 </thead>
                 <tbody>
@@ -212,27 +208,31 @@ export default function ApuracaoAnual() {
                       <td style={{ color: r2(m.ganho_usd) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
                         {r2(m.ganho_usd) >= 0 ? '+' : ''}{fmtUSD(m.ganho_usd)}
                       </td>
-                      <td style={{ color:'var(--muted)', fontSize:12 }}>
-                        {m.ptax ? `R$ ${r2(m.ptax).toFixed(4)}` : '—'}
-                      </td>
                       <td style={{ color: r2(m.ganho_brl) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
                         {fmtBRL(m.ganho_brl)}
                       </td>
-                      <td style={{ fontSize:12, color:'var(--muted)' }}>
-                        {r2(m.depositos_usd) > 0 ? fmtUSD(m.depositos_usd) : '—'}
-                      </td>
-                      <td style={{ fontSize:12, color: r2(m.saques_usd) > 0 ? 'var(--danger)' : 'var(--muted)' }}>
-                        {r2(m.saques_usd) > 0 ? `-${fmtUSD(m.saques_usd)}` : '—'}
-                      </td>
-                      <td style={{ fontSize:12, color:'var(--muted)', textAlign:'center' }}>
-                        {m.operacoes_count || 0}
-                      </td>
-                      <td>
-                        <button className="btn btn-ghost" style={{ padding:'4px 12px', fontSize:11 }}
-                          onClick={() => navigate(`/apuracao/${m.id}`)}>
-                          Detalhe
-                        </button>
-                      </td>
+                      {desbloqueado && (
+                        <>
+                          <td style={{ color:'var(--muted)', fontSize:12 }}>
+                            {m.ptax ? `R$ ${r2(m.ptax).toFixed(4)}` : '—'}
+                          </td>
+                          <td style={{ fontSize:12, color:'var(--muted)' }}>
+                            {r2(m.depositos_usd) > 0 ? fmtUSD(m.depositos_usd) : '—'}
+                          </td>
+                          <td style={{ fontSize:12, color: r2(m.saques_usd) > 0 ? 'var(--danger)' : 'var(--muted)' }}>
+                            {r2(m.saques_usd) > 0 ? `-${fmtUSD(m.saques_usd)}` : '—'}
+                          </td>
+                          <td style={{ fontSize:12, color:'var(--muted)', textAlign:'center' }}>
+                            {m.operacoes_count || 0}
+                          </td>
+                          <td>
+                            <button className="btn btn-ghost" style={{ padding:'4px 12px', fontSize:11 }}
+                              onClick={() => navigate(`/apuracao/${m.id}`)}>
+                              Detalhe
+                            </button>
+                          </td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -240,11 +240,15 @@ export default function ApuracaoAnual() {
                   <tr style={{ fontWeight:700, borderTop:'2px solid var(--border)', background:'var(--surface2)' }}>
                     <td>TOTAL</td>
                     <td style={{ color: r2(dados.lucro_usd) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>{fmtUSD(dados.lucro_usd)}</td>
-                    <td>—</td>
                     <td style={{ color: r2(dados.lucro_brl) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>{fmtBRL(dados.lucro_brl)}</td>
-                    <td style={{ fontSize:12 }}>{r2(dados.depositos_usd) > 0 ? fmtUSD(dados.depositos_usd) : '—'}</td>
-                    <td style={{ fontSize:12 }}>{r2(dados.saques_usd) > 0 ? `-${fmtUSD(dados.saques_usd)}` : '—'}</td>
-                    <td></td><td></td>
+                    {desbloqueado && (
+                      <>
+                        <td>—</td>
+                        <td style={{ fontSize:12 }}>{r2(dados.depositos_usd) > 0 ? fmtUSD(dados.depositos_usd) : '—'}</td>
+                        <td style={{ fontSize:12 }}>{r2(dados.saques_usd) > 0 ? `-${fmtUSD(dados.saques_usd)}` : '—'}</td>
+                        <td></td><td></td>
+                      </>
+                    )}
                   </tr>
                 </tfoot>
               </table>
