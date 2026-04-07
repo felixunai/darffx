@@ -9,6 +9,7 @@ export default function Login() {
   const [senha, setSenha]   = useState('')
   const [erro, setErro]     = useState('')
   const [loading, setLoading] = useState(false)
+  const [mostrarSenha, setMostrarSenha] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -43,11 +44,21 @@ export default function Login() {
           </div>
           <div>
             <label style={styles.label}>Senha</label>
-            <input
-              type="password" value={senha}
-              onChange={e => setSenha(e.target.value)}
-              placeholder="••••••••" required
-            />
+            <div style={{ position:'relative' }}>
+              <input
+                type={mostrarSenha ? 'text' : 'password'} value={senha}
+                onChange={e => setSenha(e.target.value)}
+                placeholder="••••••••" required
+                style={{ width:'100%', paddingRight:40, boxSizing:'border-box' }}
+              />
+              <button
+                type="button"
+                onClick={() => setMostrarSenha(v => !v)}
+                style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', color:'var(--muted)', fontSize:16, padding:0 }}
+              >
+                {mostrarSenha ? '🙈' : '👁️'}
+              </button>
+            </div>
           </div>
           <button
             type="submit"
