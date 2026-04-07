@@ -163,12 +163,22 @@ def _grupo_para_operacao(grupo: list[dict]) -> Operacao | None:
         return None
 
     valor = _parse_valor(amt_str)
+    # Tenta parsear balance para detectar sinal quando OCR perde o "-" do amount
+    balance_str = " ".join(cols.get("balance", []))
+    balance = _parse_valor(balance_str) if balance_str.strip() else None
 
-    # Reclassifica DEPOSIT negativo ou com keyword "withdrawal" como WITHDRAWAL
+    # Reclassifica DEPOSIT como WITHDRAWAL:
+    # 1. Keyword na descrição (mais confiável)
+    # 2. Amount negativo
+    # 3. AvaTrade usa codes como "1Bwr", "Wdl", "Wth" para saques
     if tipo == "DEPOSIT":
         desc_lower = descricao.lower()
-        if "withdrawal" in desc_lower or "withdraw" in desc_lower:
+        _withdrawal_keywords = ("withdrawal", "withdraw", "wdl", "wth", "saqu", "retirad")
+        if any(kw in desc_lower for kw in _withdrawal_keywords):
             tipo = "WITHDRAWAL"
+            # Se OCR perdeu o sinal, força negativo
+            if valor > 0:
+                valor = -valor
         elif valor < 0:
             tipo = "WITHDRAWAL"
 

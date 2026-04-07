@@ -142,7 +142,10 @@ def calcular_ir_mensal(
     saques_usd = round(sum(
         abs(op.valor_usd) for op in operacoes
         if op.data.month == mes and op.data.year == ano
-        and op.tipo == "WITHDRAWAL"
+        and (
+            op.tipo == "WITHDRAWAL"
+            or (op.tipo == "DEPOSIT" and op.valor_usd < 0)  # DEPOSIT negativo = saque não classificado
+        )
     ), 2)
 
     ganho_usd = round(sum(op.valor_usd for op in ops_mes), 2)

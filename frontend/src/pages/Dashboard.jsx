@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import Layout from '../components/Layout'
 import api    from '../api'
 
-const r2  = (v) => Math.round((v || 0) * 100) / 100
+const MESES_CURTO = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+
+const r2     = (v) => Math.round((v || 0) * 100) / 100
 const fmtBRL = (v) => `R$ ${r2(v).toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 })}`
 const fmtUSD = (v) => `US$ ${r2(v).toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 })}`
 const fmtVenc = (iso) => {
@@ -13,28 +15,55 @@ const fmtVenc = (iso) => {
   return `${d}/${m}/${y}`
 }
 
-function CardStat({ label, valor, cor, sub }) {
+function CardStat({ label, valor, cor }) {
   return (
     <div className="card" style={{ borderColor: cor ? `${cor}30` : undefined }}>
       <div style={{ fontSize:12, color:'var(--muted)', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.5px' }}>{label}</div>
       <div style={{ fontSize:22, fontFamily:'Syne', fontWeight:800, color: cor || 'var(--text)' }}>{valor}</div>
-      {sub && <div style={{ fontSize:11, color:'var(--muted)', marginTop:4 }}>{sub}</div>}
     </div>
   )
 }
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const [anuais,   setAnuais]   = useState([])
-  const [loading,  setLoading]  = useState(true)
-  const [deletando,setDeletando]= useState(null)
+  const [anuais,     setAnuais]     = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [deletando,  setDeletando]  = useState(null)
+  const [anoSel,     setAnoSel]     = useState(null)   // ano selecionado para gráfico mensal
+  const [mesesDetalhe, setMesesDetalhe] = useState([]) // breakdown mensal do ano selecionado
+  const [loadingMeses, setLoadingMeses] = useState(false)
 
   useEffect(() => {
     api.get('/apuracao/anual/')
-      .then(r => setAnuais(Array.isArray(r.data) ? r.data : []))
+      .then(r => {
+        const lista = Array.isArray(r.data) ? r.data : []
+        setAnuais(lista)
+        // Seleciona o ano mais recente por padrão
+        if (lista.length > 0) {
+          const maisRecente = lista.reduce((a, b) => a.ano > b.ano ? a : b).ano
+          setAnoSel(maisRecente)
+        }
+      })
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [])
+
+  // Busca breakdown mensal quando o ano selecionado muda
+  const buscarMeses = useCallback(async (ano) => {
+    setLoadingMeses(true)
+    try {
+      const { data } = await api.get(`/apuracao/anual/${ano}`)
+      setMesesDetalhe(data.meses || [])
+    } catch {
+      setMesesDetalhe([])
+    } finally {
+      setLoadingMeses(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (anoSel) buscarMeses(anoSel)
+  }, [anoSel, buscarMeses])
 
   const deletar = async (a) => {
     if (!window.confirm(`Excluir toda a apuração de ${a.ano}? Todos os meses serão removidos.`)) return
@@ -42,6 +71,7 @@ export default function Dashboard() {
     try {
       await api.delete(`/apuracao/anual/${a.ano}`)
       setAnuais(prev => prev.filter(x => x.ano !== a.ano))
+      if (anoSel === a.ano) setAnoSel(null)
     } catch {
       alert('Erro ao excluir. Tente novamente.')
     } finally {
@@ -49,18 +79,28 @@ export default function Dashboard() {
     }
   }
 
-  const totalImposto  = r2(anuais.reduce((s, a) => s + r2(a.imposto_brl),  0))
-  const totalLucro    = r2(anuais.reduce((s, a) => s + r2(a.lucro_brl),    0))
-  const totalDepositos= r2(anuais.reduce((s, a) => s + r2(a.depositos_usd),0))
-  const totalSaques   = r2(anuais.reduce((s, a) => s + r2(a.saques_usd),   0))
-  const pendentes     = anuais.filter(a => r2(a.imposto_brl) > 0 && !a.darf_pago).length
+  const totalImposto   = r2(anuais.reduce((s, a) => s + r2(a.imposto_brl),  0))
+  const totalLucro     = r2(anuais.reduce((s, a) => s + r2(a.lucro_brl),    0))
+  const totalDepositos = r2(anuais.reduce((s, a) => s + r2(a.depositos_usd),0))
+  const totalSaques    = r2(anuais.reduce((s, a) => s + r2(a.saques_usd),   0))
+  const pendentes      = anuais.filter(a => r2(a.imposto_brl) > 0 && !a.darf_pago).length
 
-  const chartData = [...anuais]
-    .sort((a, b) => a.ano - b.ano)
-    .map(a => ({
-      name:    String(a.ano),
-      imposto: r2(a.imposto_brl),
-      lucro:   r2(a.lucro_brl),
+  // Gráfico anual (visão geral)
+  const chartAnual = [...anuais].sort((a, b) => a.ano - b.ano).map(a => ({
+    name:    String(a.ano),
+    imposto: r2(a.imposto_brl),
+    lucro:   r2(a.lucro_brl),
+    ano:     a.ano,
+  }))
+
+  // Gráfico mensal (breakdown do ano selecionado)
+  const chartMensal = [...mesesDetalhe]
+    .sort((a, b) => a.mes - b.mes)
+    .map(m => ({
+      name:    MESES_CURTO[m.mes - 1],
+      lucro:   r2(m.ganho_brl),
+      mes:     m.mes,
+      id:      m.id,
     }))
 
   return (
@@ -83,43 +123,95 @@ export default function Dashboard() {
         <Empty navigate={navigate} />
       ) : (
         <>
+          {/* STATS */}
           <div className="grid-4" style={{ marginBottom:24 }}>
             <CardStat label="Anos apurados" valor={anuais.length} />
-            <CardStat
-              label="Lucro total (BRL)"
-              valor={fmtBRL(totalLucro)}
-              cor={totalLucro >= 0 ? 'var(--accent)' : 'var(--danger)'}
-            />
+            <CardStat label="Lucro total (BRL)" valor={fmtBRL(totalLucro)}
+              cor={totalLucro >= 0 ? 'var(--accent)' : 'var(--danger)'} />
             <CardStat label="Imposto total" valor={fmtBRL(totalImposto)} cor="var(--warn)" />
-            <CardStat
-              label="DARFs pendentes"
-              valor={pendentes}
-              cor={pendentes > 0 ? 'var(--danger)' : undefined}
-            />
+            <CardStat label="DARFs pendentes" valor={pendentes}
+              cor={pendentes > 0 ? 'var(--danger)' : undefined} />
           </div>
 
-          {chartData.length > 0 && (
-            <div className="card" style={{ marginBottom:24 }}>
-              <h3 style={{ marginBottom:20, fontSize:15 }}>Imposto por ano (R$)</h3>
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={chartData} barSize={40}>
-                  <XAxis dataKey="name" tick={{ fill:'var(--muted)', fontSize:12 }} axisLine={false} tickLine={false} />
-                  <YAxis hide />
-                  <Tooltip
-                    contentStyle={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, fontSize:13 }}
-                    formatter={(v) => [fmtBRL(v), 'Imposto']}
-                    labelStyle={{ color:'var(--muted)' }}
-                  />
-                  <Bar dataKey="imposto" radius={[6,6,0,0]}>
-                    {chartData.map((e, i) => (
-                      <Cell key={i} fill={e.imposto > 0 ? 'var(--warn)' : 'var(--accent)'} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
+          {/* GRÁFICOS */}
+          <div style={{ display:'grid', gridTemplateColumns: anuais.length > 1 ? '1fr 1fr' : '1fr', gap:16, marginBottom:24 }}>
+            {/* Gráfico anual */}
+            {anuais.length > 1 && (
+              <div className="card">
+                <h3 style={{ fontSize:14, marginBottom:16 }}>Imposto por ano</h3>
+                <ResponsiveContainer width="100%" height={160}>
+                  <BarChart data={chartAnual} barSize={36}
+                    onClick={(d) => d?.activePayload && setAnoSel(d.activePayload[0]?.payload?.ano)}>
+                    <XAxis dataKey="name" tick={{ fill:'var(--muted)', fontSize:12 }} axisLine={false} tickLine={false} />
+                    <YAxis hide />
+                    <Tooltip
+                      contentStyle={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, fontSize:12 }}
+                      formatter={(v) => [fmtBRL(v), 'Imposto']}
+                      labelStyle={{ color:'var(--muted)' }}
+                    />
+                    <Bar dataKey="imposto" radius={[6,6,0,0]}>
+                      {chartAnual.map((e, i) => (
+                        <Cell key={i}
+                          fill={e.ano === anoSel ? 'var(--accent)' : (e.imposto > 0 ? 'var(--warn)' : '#3ecf8e60')}
+                          opacity={e.ano === anoSel ? 1 : 0.7}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+                <p style={{ fontSize:11, color:'var(--muted)', textAlign:'center', marginTop:8 }}>
+                  Clique em um ano para ver o detalhamento mensal
+                </p>
+              </div>
+            )}
 
+            {/* Gráfico mensal do ano selecionado */}
+            {anoSel && (
+              <div className="card">
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+                  <h3 style={{ fontSize:14, margin:0 }}>
+                    Resultado mensal — {anoSel}
+                  </h3>
+                  {anuais.length > 1 && (
+                    <div style={{ display:'flex', gap:6 }}>
+                      {anuais.map(a => (
+                        <button key={a.ano}
+                          onClick={() => setAnoSel(a.ano)}
+                          className={`btn ${anoSel === a.ano ? 'btn-primary' : 'btn-ghost'}`}
+                          style={{ padding:'3px 10px', fontSize:11 }}>
+                          {a.ano}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {loadingMeses ? (
+                  <div style={{ height:160, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <span className="spinner" />
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={160}>
+                    <BarChart data={chartMensal} barSize={22}>
+                      <XAxis dataKey="name" tick={{ fill:'var(--muted)', fontSize:11 }} axisLine={false} tickLine={false} />
+                      <YAxis hide />
+                      <Tooltip
+                        contentStyle={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, fontSize:12 }}
+                        formatter={(v) => [fmtBRL(v), 'Resultado']}
+                        labelStyle={{ color:'var(--muted)' }}
+                      />
+                      <Bar dataKey="lucro" radius={[4,4,0,0]}>
+                        {chartMensal.map((e, i) => (
+                          <Cell key={i} fill={e.lucro >= 0 ? 'var(--accent)' : 'var(--danger)'} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* TABELA ANUAL */}
           <div className="card" style={{ overflowX:'auto' }}>
             <h3 style={{ marginBottom:20, fontSize:15 }}>Histórico de apurações anuais</h3>
             <table className="tabela" style={{ minWidth:900 }}>
@@ -141,7 +233,9 @@ export default function Dashboard() {
               </thead>
               <tbody>
                 {[...anuais].sort((a, b) => a.ano - b.ano).map(a => (
-                  <tr key={a.ano}>
+                  <tr key={a.ano}
+                    style={{ cursor:'pointer', background: anoSel === a.ano ? 'var(--surface2)' : undefined }}
+                    onClick={() => setAnoSel(a.ano)}>
                     <td style={{ fontWeight:700, fontSize:15 }}>{a.ano}</td>
                     <td style={{ color: r2(a.lucro_usd) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
                       {r2(a.lucro_usd) >= 0 ? '+' : ''}{fmtUSD(a.lucro_usd)}
@@ -152,8 +246,8 @@ export default function Dashboard() {
                     <td style={{ fontSize:12, color:'var(--muted)' }}>
                       {r2(a.depositos_usd) > 0 ? fmtUSD(a.depositos_usd) : '—'}
                     </td>
-                    <td style={{ fontSize:12, color:'var(--muted)' }}>
-                      {r2(a.saques_usd) > 0 ? fmtUSD(a.saques_usd) : '—'}
+                    <td style={{ fontSize:12, color: r2(a.saques_usd) > 0 ? 'var(--danger)' : 'var(--muted)' }}>
+                      {r2(a.saques_usd) > 0 ? `-${fmtUSD(a.saques_usd)}` : '—'}
                     </td>
                     <td style={{ fontSize:12, color: r2(a.prejuizo_anterior_brl) > 0 ? 'var(--warn)' : 'var(--muted)' }}>
                       {r2(a.prejuizo_anterior_brl) > 0 ? `-${fmtBRL(a.prejuizo_anterior_brl)}` : '—'}
@@ -172,7 +266,7 @@ export default function Dashboard() {
                           : <span className="badge badge-red">Pendente</span>
                       }
                     </td>
-                    <td>
+                    <td onClick={e => e.stopPropagation()}>
                       <div style={{ display:'flex', gap:8 }}>
                         <button className="btn btn-ghost" style={{ padding:'6px 14px', fontSize:12 }}
                           onClick={() => navigate(`/apuracao/anual/${a.ano}`)}>Ver</button>
@@ -195,23 +289,22 @@ export default function Dashboard() {
                     <td>—</td>
                     <td style={{ color: totalLucro >= 0 ? 'var(--accent)' : 'var(--danger)' }}>{fmtBRL(totalLucro)}</td>
                     <td style={{ fontSize:12 }}>{totalDepositos > 0 ? fmtUSD(totalDepositos) : '—'}</td>
-                    <td style={{ fontSize:12 }}>{totalSaques > 0 ? fmtUSD(totalSaques) : '—'}</td>
-                    <td>—</td>
-                    <td>—</td>
-                    <td>15%</td>
+                    <td style={{ fontSize:12, color:'var(--danger)' }}>{totalSaques > 0 ? `-${fmtUSD(totalSaques)}` : '—'}</td>
+                    <td>—</td><td>—</td>
+                    <td style={{ fontSize:12 }}>15%</td>
                     <td style={{ color:'var(--warn)' }}>{fmtBRL(totalImposto)}</td>
-                    <td>—</td>
-                    <td>—</td>
-                    <td></td>
+                    <td>—</td><td>—</td><td></td>
                   </tr>
                 </tfoot>
               )}
             </table>
           </div>
 
-          <div style={{ marginTop:16, padding:'12px 16px', background:'var(--surface)', borderRadius:12, border:'1px solid var(--border)', fontSize:12, color:'var(--muted)' }}>
-            📋 <strong style={{color:'var(--text)'}}>Lei 14.754/2023</strong> — Apuração anual · Alíquota fixa 15% · Sem isenção ·
-            Compensação de prejuízos entre anos · Declarar como "Aplicações financeiras no exterior" no IRPF
+          <div style={{ marginTop:16, padding:'12px 16px', background:'var(--surface)', borderRadius:12,
+            border:'1px solid var(--border)', fontSize:12, color:'var(--muted)' }}>
+            📋 <strong style={{color:'var(--text)'}}>Lei 14.754/2023</strong> — Apuração anual ·
+            Alíquota fixa 15% · Sem isenção · Compensação de prejuízos entre anos ·
+            Declarar como "Aplicações financeiras no exterior" no IRPF
           </div>
         </>
       )}
