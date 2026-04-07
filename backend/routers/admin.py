@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from datetime import datetime, timedelta
 from typing import Optional
 
-from ..models.database import User, Apuracao
+from ..models.database import User, Apuracao, ApuracaoAnual
 from ..deps import get_db, get_admin_user
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -75,7 +75,11 @@ def alterar_plano(
 
     u.plano = body.plano
 
-    if body.plano in ("free", "admin"):
+    if body.plano == "free":
+        u.plano_expiracao = None
+        # Revoga acesso: bloqueia todos os relatórios do usuário
+        db.query(ApuracaoAnual).filter_by(user_id=u.id).update({"desbloqueado": False})
+    elif body.plano == "admin":
         u.plano_expiracao = None
     elif body.plano == "pago":
         # Expiração: 31/12 do ano vigente (ou dias customizados)

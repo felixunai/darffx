@@ -175,11 +175,11 @@ export default function Admin() {
 
           {/* LEGENDA PLANOS */}
           <div className="card" style={{ marginTop:24 }}>
-            <h3 style={{ fontSize:14, marginBottom:16 }}>Estratégia de planos</h3>
+            <h3 style={{ fontSize:14, marginBottom:16 }}>Planos disponíveis</h3>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))', gap:16 }}>
-              <PlanoCard nome="Gratuito" preco="R$ 0" desc="1 mês de apuração" cor={COR_PLANO.free} />
-              <PlanoCard nome="Mensal" preco="R$ 19,90/mês" desc="Apurações ilimitadas · 30 dias" cor={COR_PLANO.mensal} />
-              <PlanoCard nome="Anual" preco="R$ 199,00/ano" desc="Apurações ilimitadas · 365 dias" cor={COR_PLANO.anual} />
+              <PlanoCard nome="Gratuito" preco="R$ 0" desc="1 upload · lucro estimado · imposto bloqueado" cor={COR_PLANO.free} />
+              <PlanoCard nome="Pago" preco="R$ 69,90" desc="Acesso completo · expira 31/12 do ano vigente" cor={COR_PLANO.pago} />
+              <PlanoCard nome="Admin" preco="Interno" desc="Acesso total · sem restrições · sem expiração" cor={COR_PLANO.admin} />
             </div>
           </div>
         </>
