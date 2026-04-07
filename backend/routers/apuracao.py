@@ -218,6 +218,20 @@ def marcar_anual_pago(
     return _anual_to_dict(anual)
 
 
+@router.patch("/anual/{ano}/pendente")
+def marcar_anual_pendente(
+    ano: int,
+    db: Session = Depends(get_db),
+    usuario: User = Depends(get_current_user),
+):
+    anual = db.query(ApuracaoAnual).filter_by(user_id=usuario.id, ano=ano).first()
+    if not anual:
+        raise HTTPException(404, "Apuração anual não encontrada.")
+    anual.darf_pago = False
+    db.commit()
+    return _anual_to_dict(anual)
+
+
 @router.delete("/anual/{ano}")
 def deletar_anual(
     ano: int,

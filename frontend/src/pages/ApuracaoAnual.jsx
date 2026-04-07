@@ -50,6 +50,16 @@ export default function ApuracaoAnual() {
     } finally { setPagando(false) }
   }
 
+  const desfazerPago = async () => {
+    setPagando(true)
+    try {
+      await api.patch(`/apuracao/anual/${ano}/pendente`)
+      setDados(d => ({ ...d, darf_pago: false }))
+    } finally { setPagando(false) }
+  }
+
+  const exportarPDF = () => window.print()
+
   if (loading) return <Layout><div style={{textAlign:'center',padding:80}}><span className="spinner" style={{width:32,height:32}} /></div></Layout>
 
   const desbloqueado = dados.desbloqueado
@@ -60,7 +70,7 @@ export default function ApuracaoAnual() {
         {/* HEADER */}
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:32, flexWrap:'wrap', gap:12 }}>
           <div>
-            <button onClick={() => navigate('/')}
+            <button onClick={() => navigate('/')} className="no-print"
               style={{ background:'none',border:'none',color:'var(--muted)',fontSize:13,cursor:'pointer',marginBottom:8,padding:0 }}>
               ← Voltar
             </button>
@@ -69,16 +79,30 @@ export default function ApuracaoAnual() {
               Lei 14.754/2023 · Alíquota fixa 15% · Aplicações financeiras no exterior
             </p>
           </div>
-          {desbloqueado && !dados.darf_pago && r2(dados.imposto_brl) > 0 && (
-            <button className="btn btn-ghost" onClick={marcarPago} disabled={pagando}>
-              {pagando ? <span className="spinner" style={{width:14,height:14}} /> : '✓ Marcar IRPF como pago'}
-            </button>
-          )}
+          <div className="no-print" style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+            {desbloqueado && (
+              <button className="btn btn-ghost" onClick={exportarPDF}
+                style={{ fontSize:13 }}>
+                ↓ Exportar PDF
+              </button>
+            )}
+            {desbloqueado && !dados.darf_pago && r2(dados.imposto_brl) > 0 && (
+              <button className="btn btn-ghost" onClick={marcarPago} disabled={pagando}>
+                {pagando ? <span className="spinner" style={{width:14,height:14}} /> : '✓ Marcar IRPF como pago'}
+              </button>
+            )}
+            {desbloqueado && dados.darf_pago && (
+              <button className="btn btn-ghost" onClick={desfazerPago} disabled={pagando}
+                style={{ color:'var(--muted)', fontSize:13 }}>
+                {pagando ? <span className="spinner" style={{width:14,height:14}} /> : '↩ Desfazer — voltar para Pendente'}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* BANNER DESBLOQUEIO SUCESSO */}
         {acabouDeDesbloquear && (
-          <div style={{
+          <div className="no-print" style={{
             background:'rgba(0,229,160,0.1)', border:'1px solid var(--accent)',
             borderRadius:12, padding:'16px 20px', marginBottom:24,
             display:'flex', alignItems:'center', gap:12
@@ -128,7 +152,7 @@ export default function ApuracaoAnual() {
 
         {/* PAYWALL (plano free) */}
         {!desbloqueado && (
-          <div style={{
+          <div className="no-print" style={{
             background:'linear-gradient(135deg, rgba(0,229,160,0.05), rgba(0,149,255,0.05))',
             border:'2px solid var(--accent)', borderRadius:20, padding:32,
             textAlign:'center', marginBottom:24,
@@ -238,7 +262,7 @@ export default function ApuracaoAnual() {
                         <td style={{ fontSize:12, color:'var(--muted)', textAlign:'center' }}>
                           {m.operacoes_count || 0}
                         </td>
-                        <td>
+                        <td className="no-print">
                           <button className="btn btn-ghost" style={{ padding:'4px 12px', fontSize:11 }}
                             onClick={() => navigate(`/apuracao/${m.id}`)}>
                             Detalhe

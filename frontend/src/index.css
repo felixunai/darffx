@@ -197,3 +197,21 @@ input::placeholder { color: var(--muted); }
   .sidebar { display: none; }
   .main-content { padding: 16px; }
 }
+
+@media print {
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  body { background: #fff !important; color: #111 !important; }
+  .sidebar, .no-print { display: none !important; }
+  .main-content { padding: 0 !important; min-height: unset !important; }
+  .layout { display: block !important; }
+  .card {
+    background: #f8f9fa !important; border: 1px solid #dee2e6 !important;
+    break-inside: avoid; page-break-inside: avoid;
+  }
+  .tabela th { background: #e9ecef !important; color: #111 !important; }
+  .tabela td, .tabela th { border-color: #dee2e6 !important; color: #111 !important; }
+  .badge { border: 1px solid #999 !important; color: #333 !important; background: #eee !important; }
+  h1, h2, h3 { color: #111 !important; }
+  .grid-4 { grid-template-columns: repeat(4,1fr) !important; }
+  @page { margin: 15mm 12mm; size: A4; }
+}
