@@ -50,9 +50,18 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
 
 @router.get("/me")
 def me(usuario: User = Depends(get_current_user)):
+    from datetime import datetime
+    expirado = (
+        usuario.plano_expiracao is not None
+        and usuario.plano_expiracao < datetime.utcnow()
+        and usuario.plano not in ("free", "admin")
+    )
     return {
-        "id":    usuario.id,
-        "email": usuario.email,
-        "nome":  usuario.nome,
-        "plano": usuario.plano,
+        "id":               usuario.id,
+        "email":            usuario.email,
+        "nome":             usuario.nome,
+        "plano":            usuario.plano,
+        "plano_expiracao":  usuario.plano_expiracao.isoformat() if usuario.plano_expiracao else None,
+        "plano_expirado":   expirado,
+        "is_admin":         usuario.email == "felixunai@gmail.com",
     }

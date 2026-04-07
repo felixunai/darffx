@@ -17,7 +17,8 @@ from ..services.parser_avatrade import parse_pdf_avatrade
 from ..services.calculo_ir import buscar_ptax, calcular_ir_mensal
 from ..services.gerador_pdf import gerar_relatorio_pdf
 from ..models.database import Apuracao, Operacao, User
-from ..deps import get_db, get_current_user
+from ..deps import get_db, get_current_user, ADMIN_EMAIL
+from datetime import datetime
 
 router = APIRouter(prefix="/apuracao", tags=["apuracao"])
 
@@ -33,6 +34,9 @@ async def upload_extrato(
     """
     if not arquivo.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Envie um arquivo PDF.")
+
+    # Verificação de plano
+    _verificar_plano(usuario, db)
 
     conteudo = await arquivo.read()
 
@@ -262,6 +266,31 @@ def marcar_pago(
     apuracao.darf_pago = True
     db.commit()
     return {"ok": True}
+
+def _verificar_plano(usuario, db: Session):
+    """Verifica se o usuário pode fazer upload conforme seu plano."""
+    # Admin e planos pagos não expirados: liberado
+    if usuario.email == ADMIN_EMAIL or usuario.plano == "admin":
+        return
+
+    # Planos pagos: verifica expiração
+    if usuario.plano in ("mensal", "anual"):
+        if usuario.plano_expiracao and usuario.plano_expiracao < datetime.utcnow():
+            raise HTTPException(
+                402,
+                "Seu plano expirou. Renove em felixunai@gmail.com ou acesse o painel para reativar."
+            )
+        return
+
+    # Plano free: máximo 1 mês de apuração
+    count = db.query(Apuracao).filter_by(user_id=usuario.id).count()
+    if count >= 1:
+        raise HTTPException(
+            402,
+            "Plano gratuito permite apenas 1 mês de apuração. "
+            "Faça upgrade para o plano Mensal (R$ 19,90) ou Anual (R$ 199,00)."
+        )
+
 
 def _apuracao_to_dict(a: Apuracao, incluir_operacoes=False) -> dict:
     d = {

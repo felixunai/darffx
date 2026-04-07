@@ -10,13 +10,15 @@ from .models.database import Base, User
 engine = create_engine(settings.DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
-# Novas colunas adicionadas ao modelo — migração incremental para tabelas existentes
+ADMIN_EMAIL = "felixunai@gmail.com"
+
 _MIGRATIONS = [
     "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS carry_fwd_brl FLOAT DEFAULT 0",
     "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS base_ir_brl FLOAT DEFAULT 0",
     "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS depositos_usd FLOAT DEFAULT 0",
     "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS saques_usd FLOAT DEFAULT 0",
     "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS vencimento_darf DATE",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS plano_expiracao TIMESTAMP",
 ]
 
 def init_db():
@@ -51,3 +53,8 @@ def get_current_user(token: str = Depends(oauth2), db: Session = Depends(get_db)
     if not user:
         raise HTTPException(401, "Usuário não encontrado.")
     return user
+
+def get_admin_user(usuario: User = Depends(get_current_user)) -> User:
+    if usuario.email != ADMIN_EMAIL:
+        raise HTTPException(403, "Acesso restrito ao administrador.")
+    return usuario
