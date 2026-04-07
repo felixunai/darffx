@@ -11,6 +11,7 @@ class User(Base):
     email            = Column(String, unique=True, nullable=False)
     nome             = Column(String)
     hashed_password  = Column(String, nullable=False)
+    # planos: free | anual | admin
     plano            = Column(String, default="free")
     plano_expiracao  = Column(DateTime, nullable=True)
     stripe_customer_id = Column(String, nullable=True)
@@ -19,32 +20,28 @@ class User(Base):
 
     apuracoes         = relationship("Apuracao",      back_populates="user", cascade="all, delete")
     apuracoes_anuais  = relationship("ApuracaoAnual", back_populates="user", cascade="all, delete")
+    pagamentos        = relationship("Pagamento",      back_populates="user", cascade="all, delete")
 
 
 class ApuracaoAnual(Base):
     """
-    Registro anual de IR — Lei 14.754/2023.
-    Alíquota fixa de 15% sobre lucro líquido anual (sem isenção, sem DARF mensal).
-    Vencimento: último dia útil de maio do ano seguinte (prazo IRPF).
+    Registro anual consolidado — Lei 14.754/2023.
+    desbloqueado=False → teaser (free). True → relatório completo.
     """
     __tablename__ = "apuracoes_anuais"
     id                    = Column(String, primary_key=True)
     user_id               = Column(String, ForeignKey("users.id"), nullable=False)
     ano                   = Column(Integer, nullable=False)
-    # P&L de trading (CLOSED + OPENED)
     lucro_usd             = Column(Float, default=0.0)
     lucro_brl             = Column(Float, default=0.0)
-    # Compensação de perdas
-    prejuizo_anterior_brl = Column(Float, default=0.0)  # carry forward de anos anteriores
+    prejuizo_anterior_brl = Column(Float, default=0.0)
     base_tributavel_brl   = Column(Float, default=0.0)
-    # Imposto
     aliquota              = Column(Float, default=0.15)
     imposto_brl           = Column(Float, default=0.0)
-    # Fluxos de caixa (para declaração)
     depositos_usd         = Column(Float, default=0.0)
     saques_usd            = Column(Float, default=0.0)
-    # Prazo e status
     vencimento_darf       = Column(Date, nullable=True)
+    desbloqueado          = Column(Boolean, default=False)  # False = teaser; True = relatório pago
     darf_pago             = Column(Boolean, default=False)
     created_at            = Column(DateTime, default=datetime.utcnow)
 
@@ -55,10 +52,7 @@ class ApuracaoAnual(Base):
 
 
 class Apuracao(Base):
-    """
-    Breakdown mensal — serve como registro de detalhe dentro da apuração anual.
-    Não gera DARF próprio; é agregado no ApuracaoAnual.
-    """
+    """Breakdown mensal — detalhe dentro da apuração anual."""
     __tablename__ = "apuracoes"
     id               = Column(String, primary_key=True)
     user_id          = Column(String, ForeignKey("users.id"), nullable=False)
@@ -91,9 +85,24 @@ class Operacao(Base):
     apuracao_id   = Column(String, ForeignKey("apuracoes.id"), nullable=False)
     adj_no        = Column(String)
     data          = Column(DateTime)
-    tipo          = Column(String)   # OPENED / CLOSED / DEPOSIT / WITHDRAWAL
+    tipo          = Column(String)
     descricao     = Column(String)
     valor_usd     = Column(Float)
-    ptax_data     = Column(Float, nullable=True)   # PTAX do dia da operação
+    ptax_data     = Column(Float, nullable=True)
 
     apuracao = relationship("Apuracao", back_populates="operacoes")
+
+
+class Pagamento(Base):
+    """Registro de pagamentos Stripe."""
+    __tablename__ = "pagamentos"
+    id                = Column(String, primary_key=True)
+    user_id           = Column(String, ForeignKey("users.id"), nullable=False)
+    tipo              = Column(String)          # "relatorio" | "anual"
+    ano               = Column(Integer, nullable=True)   # para tipo "relatorio"
+    valor_brl         = Column(Float)
+    stripe_session_id = Column(String, unique=True, nullable=True)
+    status            = Column(String, default="pendente")  # pendente | pago | cancelado
+    created_at        = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="pagamentos")

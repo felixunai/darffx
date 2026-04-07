@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routers import auth, apuracao, admin
+from .routers import auth, apuracao, admin, pagamento
 from .deps import init_db
 from .config import settings
 
@@ -25,6 +25,7 @@ def startup():
 app.include_router(auth.router)
 app.include_router(apuracao.router)
 app.include_router(admin.router)
+app.include_router(pagamento.router)
 
 @app.get("/health")
 def health():

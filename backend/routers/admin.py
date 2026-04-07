@@ -103,6 +103,22 @@ def alterar_ativo(
     db.commit()
     return _user_dict(u, db)
 
+@router.patch("/apuracoes-anuais/{apuracao_id}/desbloquear")
+def desbloquear_apuracao(
+    apuracao_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    """Admin pode desbloquear qualquer relatório sem pagamento."""
+    from ..models.database import ApuracaoAnual
+    a = db.query(ApuracaoAnual).filter_by(id=apuracao_id).first()
+    if not a:
+        raise HTTPException(404, "Apuração não encontrada.")
+    a.desbloqueado = True
+    db.commit()
+    return {"ok": True, "ano": a.ano, "user_id": a.user_id}
+
+
 @router.delete("/users/{user_id}")
 def deletar_user(
     user_id: str,

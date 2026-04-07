@@ -7,6 +7,7 @@ import Upload       from './pages/Upload'
 import Apuracao     from './pages/Apuracao'
 import ApuracaoAnual from './pages/ApuracaoAnual'
 import Admin        from './pages/Admin'
+import Upgrade      from './pages/Upgrade'
 
 function RotaProtegida({ children }) {
   const { user, loading } = useAuth()
@@ -31,6 +32,7 @@ function AppRoutes() {
       <Route path="/upload"   element={<RotaProtegida><Upload /></RotaProtegida>} />
       <Route path="/apuracao/anual/:ano" element={<RotaProtegida><ApuracaoAnual /></RotaProtegida>} />
       <Route path="/apuracao/:id"        element={<RotaProtegida><Apuracao /></RotaProtegida>} />
+      <Route path="/upgrade"  element={<RotaProtegida><Upgrade /></RotaProtegida>} />
       <Route path="/admin"    element={<RotaAdmin><Admin /></RotaAdmin>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

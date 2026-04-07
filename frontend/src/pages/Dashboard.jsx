@@ -79,18 +79,20 @@ export default function Dashboard() {
     }
   }
 
-  const totalImposto   = r2(anuais.reduce((s, a) => s + r2(a.imposto_brl),  0))
+  const desbloqueados  = anuais.filter(a => a.desbloqueado)
+  const totalImposto   = r2(desbloqueados.reduce((s, a) => s + r2(a.imposto_brl), 0))
   const totalLucro     = r2(anuais.reduce((s, a) => s + r2(a.lucro_brl),    0))
   const totalDepositos = r2(anuais.reduce((s, a) => s + r2(a.depositos_usd),0))
   const totalSaques    = r2(anuais.reduce((s, a) => s + r2(a.saques_usd),   0))
-  const pendentes      = anuais.filter(a => r2(a.imposto_brl) > 0 && !a.darf_pago).length
+  const pendentes      = desbloqueados.filter(a => r2(a.imposto_brl) > 0 && !a.darf_pago).length
 
   // Gráfico anual (visão geral)
   const chartAnual = [...anuais].sort((a, b) => a.ano - b.ano).map(a => ({
     name:    String(a.ano),
-    imposto: r2(a.imposto_brl),
+    imposto: a.desbloqueado ? r2(a.imposto_brl) : 0,
     lucro:   r2(a.lucro_brl),
     ano:     a.ano,
+    locked:  !a.desbloqueado,
   }))
 
   // Gráfico mensal (breakdown do ano selecionado)
@@ -128,8 +130,8 @@ export default function Dashboard() {
             <CardStat label="Anos apurados" valor={anuais.length} />
             <CardStat label="Lucro total (BRL)" valor={fmtBRL(totalLucro)}
               cor={totalLucro >= 0 ? 'var(--accent)' : 'var(--danger)'} />
-            <CardStat label="Imposto total" valor={fmtBRL(totalImposto)} cor="var(--warn)" />
-            <CardStat label="DARFs pendentes" valor={pendentes}
+            <CardStat label="Imposto total" valor={desbloqueados.length > 0 ? fmtBRL(totalImposto) : '🔒 Bloqueado'} cor="var(--warn)" />
+            <CardStat label="DARFs pendentes" valor={desbloqueados.length > 0 ? pendentes : '—'}
               cor={pendentes > 0 ? 'var(--danger)' : undefined} />
           </div>
 
@@ -251,27 +253,45 @@ export default function Dashboard() {
                     <td style={{ fontSize:12, color: r2(a.saques_usd) > 0 ? 'var(--danger)' : 'var(--muted)' }}>
                       {r2(a.saques_usd) > 0 ? `-${fmtUSD(a.saques_usd)}` : '—'}
                     </td>
-                    <td style={{ fontSize:12, color: r2(a.prejuizo_anterior_brl) > 0 ? 'var(--warn)' : 'var(--muted)' }}>
-                      {r2(a.prejuizo_anterior_brl) > 0 ? `-${fmtBRL(a.prejuizo_anterior_brl)}` : '—'}
-                    </td>
-                    <td>{fmtBRL(a.base_tributavel_brl)}</td>
-                    <td style={{ fontSize:12 }}>{((a.aliquota || 0.15) * 100).toFixed(0)}%</td>
-                    <td style={{ fontWeight:600, color: r2(a.imposto_brl) > 0 ? 'var(--warn)' : 'var(--accent)' }}>
-                      {fmtBRL(a.imposto_brl)}
-                    </td>
-                    <td style={{ fontSize:12, color:'var(--muted)' }}>{fmtVenc(a.vencimento_darf)}</td>
-                    <td>
-                      {r2(a.imposto_brl) === 0
-                        ? <span className="badge badge-green">Isento</span>
-                        : a.darf_pago
-                          ? <span className="badge badge-blue">Pago</span>
-                          : <span className="badge badge-red">Pendente</span>
-                      }
-                    </td>
+                    {a.desbloqueado ? (
+                      <>
+                        <td style={{ fontSize:12, color: r2(a.prejuizo_anterior_brl) > 0 ? 'var(--warn)' : 'var(--muted)' }}>
+                          {r2(a.prejuizo_anterior_brl) > 0 ? `-${fmtBRL(a.prejuizo_anterior_brl)}` : '—'}
+                        </td>
+                        <td>{fmtBRL(a.base_tributavel_brl)}</td>
+                        <td style={{ fontSize:12 }}>{((a.aliquota || 0.15) * 100).toFixed(0)}%</td>
+                        <td style={{ fontWeight:600, color: r2(a.imposto_brl) > 0 ? 'var(--warn)' : 'var(--accent)' }}>
+                          {fmtBRL(a.imposto_brl)}
+                        </td>
+                        <td style={{ fontSize:12, color:'var(--muted)' }}>{fmtVenc(a.vencimento_darf)}</td>
+                        <td>
+                          {r2(a.imposto_brl) === 0
+                            ? <span className="badge badge-green">Isento</span>
+                            : a.darf_pago
+                              ? <span className="badge badge-blue">Pago</span>
+                              : <span className="badge badge-red">Pendente</span>
+                          }
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td colSpan={5} style={{ textAlign:'center' }}>
+                          <span style={{ fontSize:12, color:'var(--muted)' }}>🔒 Relatório bloqueado</span>
+                        </td>
+                        <td>
+                          <span className="badge" style={{ background:'rgba(0,229,160,0.1)', color:'var(--accent)', border:'1px solid rgba(0,229,160,0.3)' }}>Free</span>
+                        </td>
+                      </>
+                    )}
                     <td onClick={e => e.stopPropagation()}>
                       <div style={{ display:'flex', gap:8 }}>
-                        <button className="btn btn-ghost" style={{ padding:'6px 14px', fontSize:12 }}
-                          onClick={() => navigate(`/apuracao/anual/${a.ano}`)}>Ver</button>
+                        {a.desbloqueado ? (
+                          <button className="btn btn-ghost" style={{ padding:'6px 14px', fontSize:12 }}
+                            onClick={() => navigate(`/apuracao/anual/${a.ano}`)}>Ver</button>
+                        ) : (
+                          <button className="btn btn-primary" style={{ padding:'6px 14px', fontSize:12 }}
+                            onClick={() => navigate(`/apuracao/anual/${a.ano}`)}>Desbloquear</button>
+                        )}
                         <button
                           className="btn btn-ghost"
                           style={{ padding:'6px 14px', fontSize:12, color:'var(--danger)', borderColor:'var(--danger)' }}

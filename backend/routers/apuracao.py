@@ -143,7 +143,7 @@ async def upload_extrato(
         .order_by(ApuracaoAnual.ano.desc())
         .all()
     )
-    return {"apuracoes_anuais": [_anual_to_dict(a) for a in anuais]}
+    return {"apuracoes_anuais": [_anual_to_dict(a, usuario) for a in anuais]}
 
 
 # ── LISTAGEM ANUAL ────────────────────────────────────────────────────────────
@@ -171,7 +171,7 @@ def listar_anuais(
             .order_by(ApuracaoAnual.ano.desc())
             .all()
         )
-    return [_anual_to_dict(a) for a in anuais]
+    return [_anual_to_dict(a, usuario) for a in anuais]
 
 
 @router.get("/anual/{ano}")
@@ -190,7 +190,7 @@ def detalhe_anual(
         .order_by(Apuracao.mes)
         .all()
     )
-    return {**_anual_to_dict(anual), "meses": [_mensal_to_dict(m) for m in meses]}
+    return {**_anual_to_dict(anual, usuario), "meses": [_mensal_to_dict(m) for m in meses]}
 
 
 @router.patch("/anual/{ano}/pago")
@@ -406,18 +406,25 @@ def _calcular_carry_forward(apuracoes: list) -> float:
 
 
 def _verificar_plano(usuario, db: Session):
+    """
+    Planos:
+    - admin: sem restrição
+    - anual: sem restrição (verifica expiração)
+    - free: 1 PDF (1 ApuracaoAnual) — resultado fica bloqueado até pagar
+    """
     if usuario.email == ADMIN_EMAIL or usuario.plano == "admin":
         return
-    if usuario.plano in ("mensal", "anual"):
+    if usuario.plano == "anual":
         if usuario.plano_expiracao and usuario.plano_expiracao < datetime.utcnow():
-            raise HTTPException(402, "Seu plano expirou. Renove para continuar.")
+            raise HTTPException(402, "Seu Acesso Anual expirou. Renove para continuar.")
         return
-    count = db.query(Apuracao).filter_by(user_id=usuario.id).count()
+    # free: permite 1 upload (1 ApuracaoAnual). O resultado fica como teaser.
+    count = db.query(ApuracaoAnual).filter_by(user_id=usuario.id).count()
     if count >= 1:
         raise HTTPException(
             402,
-            "Plano gratuito permite apenas 1 mês de apuração. "
-            "Faça upgrade para o plano Mensal (R$ 19,90) ou Anual (R$ 199,00)."
+            "PLAN_LIMIT: Plano gratuito permite 1 apuração. "
+            "Desbloqueie o Relatório Completo por R$ 69,00 ou obtenha Acesso Anual por R$ 49,00."
         )
 
 
@@ -425,22 +432,51 @@ def _r2(v) -> float:
     return round(v or 0, 2)
 
 
-def _anual_to_dict(a: ApuracaoAnual) -> dict:
-    return {
+def _is_desbloqueado(a: ApuracaoAnual, usuario) -> bool:
+    """Admin e plano anual válido desbloqueiam tudo; senão verifica flag da apuração."""
+    if usuario.email == ADMIN_EMAIL or usuario.plano == "admin":
+        return True
+    if usuario.plano == "anual":
+        if usuario.plano_expiracao is None or usuario.plano_expiracao > datetime.utcnow():
+            return True
+    return bool(a.desbloqueado)
+
+
+def _anual_to_dict(a: ApuracaoAnual, usuario=None) -> dict:
+    desbloqueado = _is_desbloqueado(a, usuario) if usuario else bool(a.desbloqueado)
+
+    base = {
         "id": a.id,
         "ano": a.ano,
+        "desbloqueado": desbloqueado,
         "lucro_usd": _r2(a.lucro_usd),
         "lucro_brl": _r2(a.lucro_brl),
-        "prejuizo_anterior_brl": _r2(a.prejuizo_anterior_brl),
-        "base_tributavel_brl": _r2(a.base_tributavel_brl),
-        "aliquota": _r2(a.aliquota),
-        "imposto_brl": _r2(a.imposto_brl),
         "depositos_usd": _r2(a.depositos_usd),
         "saques_usd": _r2(a.saques_usd),
-        "vencimento_darf": a.vencimento_darf.isoformat() if a.vencimento_darf else None,
         "darf_pago": a.darf_pago,
         "created_at": a.created_at.isoformat() if a.created_at else None,
     }
+
+    if desbloqueado:
+        # Dados completos — apenas para usuários que pagaram
+        base.update({
+            "prejuizo_anterior_brl": _r2(a.prejuizo_anterior_brl),
+            "base_tributavel_brl": _r2(a.base_tributavel_brl),
+            "aliquota": _r2(a.aliquota),
+            "imposto_brl": _r2(a.imposto_brl),
+            "vencimento_darf": a.vencimento_darf.isoformat() if a.vencimento_darf else None,
+        })
+    else:
+        # Teaser — sem imposto, sem base tributável
+        base.update({
+            "prejuizo_anterior_brl": None,
+            "base_tributavel_brl": None,
+            "aliquota": None,
+            "imposto_brl": None,
+            "vencimento_darf": None,
+        })
+
+    return base
 
 
 def _mensal_to_dict(a: Apuracao, incluir_operacoes=False) -> dict:

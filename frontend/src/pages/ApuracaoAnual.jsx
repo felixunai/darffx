@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import Layout from '../components/Layout'
 import api from '../api'
 
-const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
-               'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 const MESES_CURTO = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 
 const r2     = (v) => Math.round((v || 0) * 100) / 100
@@ -17,12 +15,12 @@ const fmtVenc = (iso) => {
 }
 
 export default function ApuracaoAnual() {
-  const { ano }  = useParams()
-  const navigate = useNavigate()
+  const { ano }    = useParams()
+  const navigate   = useNavigate()
+  const [params]   = useSearchParams()
   const [dados,    setDados]    = useState(null)
   const [loading,  setLoading]  = useState(true)
   const [pagando,  setPagando]  = useState(false)
-  const [mesSel,   setMesSel]   = useState(null)
 
   useEffect(() => {
     api.get(`/apuracao/anual/${ano}`)
@@ -30,6 +28,9 @@ export default function ApuracaoAnual() {
       .catch(() => navigate('/'))
       .finally(() => setLoading(false))
   }, [ano])
+
+  // Exibe sucesso de desbloqueio após retorno do Stripe
+  const acabouDeDesbloquear = params.get('desbloqueado') === '1'
 
   const marcarPago = async () => {
     setPagando(true)
@@ -41,7 +42,7 @@ export default function ApuracaoAnual() {
 
   if (loading) return <Layout><div style={{textAlign:'center',padding:80}}><span className="spinner" style={{width:32,height:32}} /></div></Layout>
 
-  const mesDetalhado = mesSel ? dados.meses?.find(m => m.mes === mesSel) : null
+  const desbloqueado = dados.desbloqueado
 
   return (
     <Layout>
@@ -58,16 +59,29 @@ export default function ApuracaoAnual() {
               Lei 14.754/2023 · Alíquota fixa 15% · Aplicações financeiras no exterior
             </p>
           </div>
-          <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
-            {!dados.darf_pago && r2(dados.imposto_brl) > 0 && (
-              <button className="btn btn-ghost" onClick={marcarPago} disabled={pagando}>
-                {pagando ? <span className="spinner" style={{width:14,height:14}} /> : '✓ Marcar IRPF como pago'}
-              </button>
-            )}
-          </div>
+          {desbloqueado && !dados.darf_pago && r2(dados.imposto_brl) > 0 && (
+            <button className="btn btn-ghost" onClick={marcarPago} disabled={pagando}>
+              {pagando ? <span className="spinner" style={{width:14,height:14}} /> : '✓ Marcar IRPF como pago'}
+            </button>
+          )}
         </div>
 
-        {/* CARDS PRINCIPAIS */}
+        {/* BANNER DESBLOQUEIO SUCESSO */}
+        {acabouDeDesbloquear && (
+          <div style={{
+            background:'rgba(0,229,160,0.1)', border:'1px solid var(--accent)',
+            borderRadius:12, padding:'16px 20px', marginBottom:24,
+            display:'flex', alignItems:'center', gap:12
+          }}>
+            <span style={{ fontSize:20 }}>🎉</span>
+            <div>
+              <div style={{ fontWeight:600, color:'var(--accent)' }}>Relatório desbloqueado com sucesso!</div>
+              <div style={{ fontSize:13, color:'var(--muted)' }}>Seu pagamento foi confirmado. O relatório completo está disponível abaixo.</div>
+            </div>
+          </div>
+        )}
+
+        {/* CARDS */}
         <div className="grid-4" style={{ marginBottom:24 }}>
           <div className="card">
             <div style={s.label}>Lucro líquido (USD)</div>
@@ -81,52 +95,97 @@ export default function ApuracaoAnual() {
               {fmtBRL(dados.lucro_brl)}
             </div>
           </div>
-          <div className="card">
+          <div className="card" style={{ position:'relative', overflow:'hidden' }}>
             <div style={s.label}>Base tributável</div>
-            <div style={s.valor}>{fmtBRL(dados.base_tributavel_brl)}</div>
-            {r2(dados.prejuizo_anterior_brl) > 0 && (
-              <div style={{ fontSize:11, color:'var(--warn)', marginTop:4 }}>
-                Prej. comp.: -{fmtBRL(dados.prejuizo_anterior_brl)}
-              </div>
-            )}
+            {desbloqueado
+              ? <div style={s.valor}>{fmtBRL(dados.base_tributavel_brl)}</div>
+              : <LockedValue />
+            }
           </div>
-          <div className="card" style={{ borderColor: r2(dados.imposto_brl) > 0 ? 'rgba(255,179,71,0.3)' : 'rgba(0,229,160,0.3)' }}>
+          <div className="card" style={{
+            borderColor: desbloqueado && r2(dados.imposto_brl) > 0 ? 'rgba(255,179,71,0.3)' : 'rgba(0,229,160,0.3)',
+            position:'relative', overflow:'hidden'
+          }}>
             <div style={s.label}>Imposto devido (15%)</div>
-            <div style={{ ...s.valor, color: r2(dados.imposto_brl) > 0 ? 'var(--warn)' : 'var(--accent)' }}>
-              {fmtBRL(dados.imposto_brl)}
-            </div>
+            {desbloqueado
+              ? <div style={{ ...s.valor, color: r2(dados.imposto_brl) > 0 ? 'var(--warn)' : 'var(--accent)' }}>
+                  {fmtBRL(dados.imposto_brl)}
+                </div>
+              : <LockedValue />
+            }
           </div>
         </div>
 
-        {/* BOX DECLARAÇÃO */}
-        <div style={{
-          background:'var(--surface)', border:`1px solid ${dados.darf_pago ? 'rgba(0,149,255,0.3)' : 'rgba(255,179,71,0.3)'}`,
-          borderRadius:16, padding:24, marginBottom:24
-        }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:16 }}>
-            <div>
-              <div style={{ fontFamily:'Syne', fontWeight:800, fontSize:17, marginBottom:8 }}>
-                IRPF — Aplicações Financeiras no Exterior
-              </div>
-              <div style={{ fontSize:13, color:'var(--muted)', lineHeight:1.8 }}>
-                <div>• Alíquota: <strong style={{color:'var(--text)'}}>15% fixo</strong> (Lei 14.754/2023)</div>
-                <div>• Declarar como: <strong style={{color:'var(--text)'}}>Aplicações financeiras no exterior</strong></div>
-                <div>• Vencimento: <strong style={{color:'var(--text)'}}>{fmtVenc(dados.vencimento_darf)}</strong></div>
-                <div>• Depósitos: <strong style={{color:'var(--text)'}}>{fmtUSD(dados.depositos_usd)}</strong></div>
-                <div>• Saques: <strong style={{color:'var(--text)'}}>{fmtUSD(dados.saques_usd)}</strong></div>
-              </div>
+        {/* PAYWALL (plano free) */}
+        {!desbloqueado && (
+          <div style={{
+            background:'linear-gradient(135deg, rgba(0,229,160,0.05), rgba(0,149,255,0.05))',
+            border:'2px solid var(--accent)', borderRadius:20, padding:32,
+            textAlign:'center', marginBottom:24,
+          }}>
+            <div style={{ fontSize:40, marginBottom:12 }}>🔒</div>
+            <h2 style={{ fontSize:22, marginBottom:8, fontFamily:'Syne' }}>
+              Desbloqueie o Relatório Completo
+            </h2>
+            <p style={{ color:'var(--muted)', fontSize:15, maxWidth:400, margin:'0 auto 24px' }}>
+              Você pode ver seu lucro estimado. Para o cálculo oficial do imposto e o relatório para declaração, desbloqueie por <strong style={{color:'var(--accent)'}}>R$ 69,00</strong> — pagamento único, sem assinatura.
+            </p>
+
+            <div style={{ display:'flex', gap:12, justifyContent:'center', flexWrap:'wrap', marginBottom:20 }}>
+              {['Cálculo oficial 15%','PTAX automático','Compensação de prejuízos','Relatório para IRPF'].map((f, i) => (
+                <span key={i} style={{
+                  fontSize:12, padding:'5px 14px', borderRadius:20,
+                  background:'rgba(0,229,160,0.1)', color:'var(--accent)',
+                  border:'1px solid rgba(0,229,160,0.3)',
+                }}>✓ {f}</span>
+              ))}
             </div>
-            <div style={{ textAlign:'right' }}>
-              <div style={{ fontSize:32, fontFamily:'Syne', fontWeight:800, color: dados.darf_pago ? 'var(--accent)' : 'var(--warn)' }}>
-                {fmtBRL(dados.imposto_brl)}
+
+            <button
+              className="btn btn-primary"
+              style={{ padding:'14px 36px', fontSize:15, borderRadius:12 }}
+              onClick={() => navigate(`/upgrade?ano=${ano}`)}
+            >
+              Desbloquear por R$ 69,00 →
+            </button>
+
+            <p style={{ fontSize:12, color:'var(--muted)', marginTop:12 }}>
+              Pagamento seguro via Stripe · Acesso imediato
+            </p>
+          </div>
+        )}
+
+        {/* BOX DECLARAÇÃO (só se desbloqueado) */}
+        {desbloqueado && (
+          <div style={{
+            background:'var(--surface)', border:`1px solid ${dados.darf_pago ? 'rgba(0,149,255,0.3)' : 'rgba(255,179,71,0.3)'}`,
+            borderRadius:16, padding:24, marginBottom:24
+          }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:16 }}>
+              <div>
+                <div style={{ fontFamily:'Syne', fontWeight:800, fontSize:17, marginBottom:8 }}>
+                  IRPF — Aplicações Financeiras no Exterior
+                </div>
+                <div style={{ fontSize:13, color:'var(--muted)', lineHeight:1.8 }}>
+                  <div>• Alíquota: <strong style={{color:'var(--text)'}}>15% fixo</strong> (Lei 14.754/2023)</div>
+                  <div>• Declarar como: <strong style={{color:'var(--text)'}}>Aplicações financeiras no exterior</strong></div>
+                  <div>• Vencimento: <strong style={{color:'var(--text)'}}>{fmtVenc(dados.vencimento_darf)}</strong></div>
+                  <div>• Depósitos: <strong style={{color:'var(--text)'}}>{fmtUSD(dados.depositos_usd)}</strong></div>
+                  <div>• Saques: <strong style={{color:'var(--text)'}}>{fmtUSD(dados.saques_usd)}</strong></div>
+                </div>
               </div>
-              {dados.darf_pago
-                ? <span className="badge badge-blue">✓ Pago</span>
-                : <span className="badge badge-yellow">Pendente</span>
-              }
+              <div style={{ textAlign:'right' }}>
+                <div style={{ fontSize:32, fontFamily:'Syne', fontWeight:800, color: dados.darf_pago ? 'var(--accent)' : 'var(--warn)' }}>
+                  {fmtBRL(dados.imposto_brl)}
+                </div>
+                {dados.darf_pago
+                  ? <span className="badge badge-blue">✓ Pago</span>
+                  : <span className="badge badge-yellow">Pendente</span>
+                }
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* BREAKDOWN MENSAL */}
         {dados.meses?.length > 0 && (
@@ -148,7 +207,7 @@ export default function ApuracaoAnual() {
                 </thead>
                 <tbody>
                   {dados.meses.map(m => (
-                    <tr key={m.mes} style={{ cursor:'pointer' }} onClick={() => setMesSel(mesSel === m.mes ? null : m.mes)}>
+                    <tr key={m.mes}>
                       <td style={{ fontWeight:600 }}>{MESES_CURTO[m.mes-1]}</td>
                       <td style={{ color: r2(m.ganho_usd) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
                         {r2(m.ganho_usd) >= 0 ? '+' : ''}{fmtUSD(m.ganho_usd)}
@@ -162,15 +221,15 @@ export default function ApuracaoAnual() {
                       <td style={{ fontSize:12, color:'var(--muted)' }}>
                         {r2(m.depositos_usd) > 0 ? fmtUSD(m.depositos_usd) : '—'}
                       </td>
-                      <td style={{ fontSize:12, color:'var(--muted)' }}>
-                        {r2(m.saques_usd) > 0 ? fmtUSD(m.saques_usd) : '—'}
+                      <td style={{ fontSize:12, color: r2(m.saques_usd) > 0 ? 'var(--danger)' : 'var(--muted)' }}>
+                        {r2(m.saques_usd) > 0 ? `-${fmtUSD(m.saques_usd)}` : '—'}
                       </td>
                       <td style={{ fontSize:12, color:'var(--muted)', textAlign:'center' }}>
                         {m.operacoes_count || 0}
                       </td>
                       <td>
                         <button className="btn btn-ghost" style={{ padding:'4px 12px', fontSize:11 }}
-                          onClick={(e) => { e.stopPropagation(); navigate(`/apuracao/${m.id}`) }}>
+                          onClick={() => navigate(`/apuracao/${m.id}`)}>
                           Detalhe
                         </button>
                       </td>
@@ -180,29 +239,48 @@ export default function ApuracaoAnual() {
                 <tfoot>
                   <tr style={{ fontWeight:700, borderTop:'2px solid var(--border)', background:'var(--surface2)' }}>
                     <td>TOTAL</td>
-                    <td style={{ color: r2(dados.lucro_usd) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
-                      {fmtUSD(dados.lucro_usd)}
-                    </td>
+                    <td style={{ color: r2(dados.lucro_usd) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>{fmtUSD(dados.lucro_usd)}</td>
                     <td>—</td>
-                    <td style={{ color: r2(dados.lucro_brl) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
-                      {fmtBRL(dados.lucro_brl)}
-                    </td>
-                    <td style={{ fontSize:12 }}>
-                      {r2(dados.depositos_usd) > 0 ? fmtUSD(dados.depositos_usd) : '—'}
-                    </td>
-                    <td style={{ fontSize:12 }}>
-                      {r2(dados.saques_usd) > 0 ? fmtUSD(dados.saques_usd) : '—'}
-                    </td>
-                    <td></td>
-                    <td></td>
+                    <td style={{ color: r2(dados.lucro_brl) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>{fmtBRL(dados.lucro_brl)}</td>
+                    <td style={{ fontSize:12 }}>{r2(dados.depositos_usd) > 0 ? fmtUSD(dados.depositos_usd) : '—'}</td>
+                    <td style={{ fontSize:12 }}>{r2(dados.saques_usd) > 0 ? `-${fmtUSD(dados.saques_usd)}` : '—'}</td>
+                    <td></td><td></td>
                   </tr>
                 </tfoot>
               </table>
             </div>
           </div>
         )}
+
+        {/* UPSELL ANUAL (pós-desbloqueio) */}
+        {desbloqueado && (
+          <div style={{
+            background:'var(--surface)', border:'1px solid rgba(167,139,250,0.3)',
+            borderRadius:16, padding:24, textAlign:'center',
+          }}>
+            <div style={{ fontSize:14, color:'#a78bfa', fontWeight:700, marginBottom:8 }}>ACESSO ANUAL</div>
+            <p style={{ color:'var(--muted)', fontSize:14, marginBottom:16 }}>
+              Quer poder reprocessar o PDF quando quiser, acessar anos anteriores e ter histórico completo?
+              Adicione o <strong style={{color:'#a78bfa'}}>Acesso Anual por R$ 49,00</strong>.
+            </p>
+            <button className="btn btn-ghost"
+              style={{ borderColor:'#a78bfa', color:'#a78bfa', padding:'10px 24px' }}
+              onClick={() => navigate('/upgrade')}>
+              Ver Acesso Anual →
+            </button>
+          </div>
+        )}
       </div>
     </Layout>
+  )
+}
+
+function LockedValue() {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:4 }}>
+      <span style={{ fontSize:20 }}>🔒</span>
+      <span style={{ fontSize:14, color:'var(--muted)' }}>Bloqueado</span>
+    </div>
   )
 }
 
