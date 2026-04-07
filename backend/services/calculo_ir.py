@@ -68,20 +68,20 @@ def calcular_ir_mensal(
     ano: int,
 ) -> ResultadoMensal:
     """
-    Recebe lista de Operacao (tipo CLOSED), PTAX e mês/ano.
+    Recebe lista de Operacao (OPENED + CLOSED), PTAX e mês/ano.
     Retorna ResultadoMensal com todos os valores calculados.
 
     Regra 2024+:
-    - Ganhos = soma de CLOSED positivos do mês
-    - Perdas = soma de CLOSED negativos do mês
-    - Base = ganhos - perdas (se positivo)
+    - Para AvaOptions: P&L = soma de OPENED (prêmios) + CLOSED (liquidação)
+    - Para MT4 forex padrão: OPENED sempre = $0, então comportamento idêntico
     - Alíquota = 15% normal / 20% se houver day trade
     - Sem isenção
     """
-    # filtra apenas operações do mês/ano correto
+    # filtra operações do mês/ano (OPENED + CLOSED para cobrir prêmios de opções)
     ops_mes = [
         op for op in operacoes_fechadas
-        if op.data.month == mes and op.data.year == ano and op.tipo == "CLOSED"
+        if op.data.month == mes and op.data.year == ano
+        and op.tipo in ("CLOSED", "OPENED")
     ]
 
     ganho_usd = sum(op.valor_usd for op in ops_mes)

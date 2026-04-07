@@ -90,7 +90,7 @@ async def upload_extrato(
         db.add(apuracao)
 
         for op in ops:
-            if op.tipo != "CLOSED":
+            if op.tipo not in ("CLOSED", "OPENED"):
                 continue
             db.add(Operacao(
                 id=str(uuid.uuid4()),
