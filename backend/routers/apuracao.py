@@ -409,14 +409,14 @@ def _verificar_plano(usuario, db: Session):
     """
     Planos:
     - admin: sem restrição
-    - anual: sem restrição (verifica expiração)
+    - pago: sem restrição até 31/12 do ano vigente
     - free: 1 PDF (1 ApuracaoAnual) — resultado fica bloqueado até pagar
     """
     if usuario.email == ADMIN_EMAIL or usuario.plano == "admin":
         return
-    if usuario.plano == "anual":
+    if usuario.plano == "pago":
         if usuario.plano_expiracao and usuario.plano_expiracao < datetime.utcnow():
-            raise HTTPException(402, "Seu Acesso Anual expirou. Renove para continuar.")
+            raise HTTPException(402, "Seu acesso expirou em 31/12. Renove para continuar.")
         return
     # free: permite 1 upload (1 ApuracaoAnual). O resultado fica como teaser.
     count = db.query(ApuracaoAnual).filter_by(user_id=usuario.id).count()
@@ -424,7 +424,7 @@ def _verificar_plano(usuario, db: Session):
         raise HTTPException(
             402,
             "PLAN_LIMIT: Plano gratuito permite 1 apuração. "
-            "Desbloqueie o Relatório Completo por R$ 69,00 ou obtenha Acesso Anual por R$ 49,00."
+            "Desbloqueie o Relatório Completo por R$ 69,90."
         )
 
 
@@ -433,10 +433,10 @@ def _r2(v) -> float:
 
 
 def _is_desbloqueado(a: ApuracaoAnual, usuario) -> bool:
-    """Admin e plano anual válido desbloqueiam tudo; senão verifica flag da apuração."""
+    """Admin e plano pago válido desbloqueiam tudo; senão verifica flag da apuração."""
     if usuario.email == ADMIN_EMAIL or usuario.plano == "admin":
         return True
-    if usuario.plano == "anual":
+    if usuario.plano == "pago":
         if usuario.plano_expiracao is None or usuario.plano_expiracao > datetime.utcnow():
             return True
     return bool(a.desbloqueado)

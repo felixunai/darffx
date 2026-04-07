@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react'
 import Layout from '../components/Layout'
 import api from '../api'
 
-const PLANOS = ['free', 'mensal', 'anual', 'admin']
-const COR_PLANO = { free:'var(--muted)', mensal:'var(--accent)', anual:'#a78bfa', admin:'var(--warn)' }
+const PLANOS = ['free', 'pago', 'admin']
+const COR_PLANO = { free:'var(--muted)', pago:'var(--accent)', admin:'var(--warn)' }
 
 export default function Admin() {
   const [stats,    setStats]    = useState(null)
@@ -20,14 +20,9 @@ export default function Admin() {
   }, [])
 
   const alterarPlano = async (userId, plano) => {
-    const diasDefault = plano === 'anual' ? 365 : plano === 'mensal' ? 30 : undefined
-    const diasStr = plano === 'free' || plano === 'admin' ? null
-      : prompt(`Dias de acesso para ${plano}:`, diasDefault)
-    if (diasStr === undefined) return // cancelou
     setSalvando(userId)
     try {
-      const body = { plano, ...(diasStr ? { dias: parseInt(diasStr) } : {}) }
-      const { data } = await api.patch(`/admin/users/${userId}/plano`, body)
+      const { data } = await api.patch(`/admin/users/${userId}/plano`, { plano })
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...data } : u))
     } catch(e) {
       alert('Erro: ' + (e.response?.data?.detail || e.message))

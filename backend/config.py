@@ -11,8 +11,7 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:5173"
 
     # Preços em centavos (BRL)
-    PRECO_RELATORIO_CENTAVOS: int = 6900   # R$ 69,00
-    PRECO_ANUAL_CENTAVOS: int = 4900       # R$ 49,00
+    PRECO_ACESSO_CENTAVOS: int = 6990   # R$ 69,90 — acesso anual (expira 31/12 do ano vigente)
 
     class Config:
         env_file = ".env"

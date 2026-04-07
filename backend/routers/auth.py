@@ -54,7 +54,7 @@ def me(usuario: User = Depends(get_current_user)):
     expirado = (
         usuario.plano_expiracao is not None
         and usuario.plano_expiracao < datetime.utcnow()
-        and usuario.plano not in ("free", "admin")
+        and usuario.plano == "pago"
     )
     return {
         "id":               usuario.id,

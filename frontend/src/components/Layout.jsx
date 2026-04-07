@@ -21,12 +21,12 @@ export default function Layout({ children }) {
           {user?.plano && (
             <div style={{
               fontSize:10, marginTop:6, padding:'2px 8px', borderRadius:20, display:'inline-block',
-              background: user.plano === 'free' ? 'var(--surface2)' : 'var(--accent)20',
-              color: user.plano === 'free' ? 'var(--muted)' : 'var(--accent)',
-              border: `1px solid ${user.plano === 'free' ? 'var(--border)' : 'var(--accent)40'}`,
+              background: user.plano === 'free' ? 'var(--surface2)' : user.plano === 'admin' ? 'rgba(255,179,71,0.15)' : 'rgba(0,229,160,0.15)',
+              color: user.plano === 'free' ? 'var(--muted)' : user.plano === 'admin' ? 'var(--warn)' : 'var(--accent)',
+              border: `1px solid ${user.plano === 'free' ? 'var(--border)' : user.plano === 'admin' ? 'rgba(255,179,71,0.4)' : 'rgba(0,229,160,0.4)'}`,
               textTransform:'uppercase', letterSpacing:'0.5px', fontWeight:600,
             }}>
-              {user.plano}
+              {user.plano === 'pago' ? 'PAGO' : user.plano}
             </div>
           )}
         </div>

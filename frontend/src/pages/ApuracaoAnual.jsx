@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import Layout from '../components/Layout'
 import api from '../api'
+import { useAuth } from '../context/AuthContext'
 
 const MESES_CURTO = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 
@@ -21,6 +22,7 @@ export default function ApuracaoAnual() {
   const [dados,    setDados]    = useState(null)
   const [loading,  setLoading]  = useState(true)
   const [pagando,  setPagando]  = useState(false)
+  const { refreshUser } = useAuth()
 
   useEffect(() => {
     api.get(`/apuracao/anual/${ano}`)
@@ -31,6 +33,14 @@ export default function ApuracaoAnual() {
 
   // Exibe sucesso de desbloqueio após retorno do Stripe
   const acabouDeDesbloquear = params.get('desbloqueado') === '1'
+
+  // Atualiza plano no contexto após pagamento (webhook pode demorar ~1s)
+  useEffect(() => {
+    if (acabouDeDesbloquear) {
+      const t = setTimeout(() => refreshUser(), 2000)
+      return () => clearTimeout(t)
+    }
+  }, [acabouDeDesbloquear])
 
   const marcarPago = async () => {
     setPagando(true)
@@ -128,7 +138,7 @@ export default function ApuracaoAnual() {
               Desbloqueie o Relatório Completo
             </h2>
             <p style={{ color:'var(--muted)', fontSize:15, maxWidth:400, margin:'0 auto 24px' }}>
-              Você pode ver seu lucro estimado. Para o cálculo oficial do imposto e o relatório para declaração, desbloqueie por <strong style={{color:'var(--accent)'}}>R$ 69,00</strong> — pagamento único, sem assinatura.
+              Você pode ver seu lucro estimado. Para o cálculo oficial do imposto e o relatório para declaração, desbloqueie por <strong style={{color:'var(--accent)'}}>R$ 69,90</strong> — pagamento único, sem assinatura.
             </p>
 
             <div style={{ display:'flex', gap:12, justifyContent:'center', flexWrap:'wrap', marginBottom:20 }}>
@@ -144,9 +154,9 @@ export default function ApuracaoAnual() {
             <button
               className="btn btn-primary"
               style={{ padding:'14px 36px', fontSize:15, borderRadius:12 }}
-              onClick={() => navigate(`/upgrade?ano=${ano}`)}
+              onClick={() => navigate('/upgrade')}
             >
-              Desbloquear por R$ 69,00 →
+              Desbloquear por R$ 69,90 →
             </button>
 
             <p style={{ fontSize:12, color:'var(--muted)', marginTop:12 }}>
@@ -191,89 +201,74 @@ export default function ApuracaoAnual() {
         {dados.meses?.length > 0 && (
           <div className="card" style={{ marginBottom:24 }}>
             <h3 style={{ fontSize:15, marginBottom:20 }}>Breakdown mensal — {ano}</h3>
-            <div style={{ overflowX:'auto' }}>
-              <table className="tabela">
-                <thead>
-                  <tr>
-                    <th>Mês</th>
-                    <th>Resultado (USD)</th>
-                    <th>Resultado (BRL)</th>
-                    {desbloqueado && <><th>PTAX</th><th>Depósitos</th><th>Saques</th><th>Operações</th><th></th></>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {dados.meses.map(m => (
-                    <tr key={m.mes}>
-                      <td style={{ fontWeight:600 }}>{MESES_CURTO[m.mes-1]}</td>
-                      <td style={{ color: r2(m.ganho_usd) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
-                        {r2(m.ganho_usd) >= 0 ? '+' : ''}{fmtUSD(m.ganho_usd)}
-                      </td>
-                      <td style={{ color: r2(m.ganho_brl) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
-                        {fmtBRL(m.ganho_brl)}
-                      </td>
-                      {desbloqueado && (
-                        <>
-                          <td style={{ color:'var(--muted)', fontSize:12 }}>
-                            {m.ptax ? `R$ ${r2(m.ptax).toFixed(4)}` : '—'}
-                          </td>
-                          <td style={{ fontSize:12, color:'var(--muted)' }}>
-                            {r2(m.depositos_usd) > 0 ? fmtUSD(m.depositos_usd) : '—'}
-                          </td>
-                          <td style={{ fontSize:12, color: r2(m.saques_usd) > 0 ? 'var(--danger)' : 'var(--muted)' }}>
-                            {r2(m.saques_usd) > 0 ? `-${fmtUSD(m.saques_usd)}` : '—'}
-                          </td>
-                          <td style={{ fontSize:12, color:'var(--muted)', textAlign:'center' }}>
-                            {m.operacoes_count || 0}
-                          </td>
-                          <td>
-                            <button className="btn btn-ghost" style={{ padding:'4px 12px', fontSize:11 }}
-                              onClick={() => navigate(`/apuracao/${m.id}`)}>
-                              Detalhe
-                            </button>
-                          </td>
-                        </>
-                      )}
+            {desbloqueado ? (
+              <div style={{ overflowX:'auto' }}>
+                <table className="tabela">
+                  <thead>
+                    <tr>
+                      <th>Mês</th>
+                      <th>Resultado (USD)</th>
+                      <th>Resultado (BRL)</th>
+                      <th>PTAX</th>
+                      <th>Depósitos</th>
+                      <th>Saques</th>
+                      <th>Operações</th>
+                      <th></th>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr style={{ fontWeight:700, borderTop:'2px solid var(--border)', background:'var(--surface2)' }}>
-                    <td>TOTAL</td>
-                    <td style={{ color: r2(dados.lucro_usd) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>{fmtUSD(dados.lucro_usd)}</td>
-                    <td style={{ color: r2(dados.lucro_brl) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>{fmtBRL(dados.lucro_brl)}</td>
-                    {desbloqueado && (
-                      <>
-                        <td>—</td>
-                        <td style={{ fontSize:12 }}>{r2(dados.depositos_usd) > 0 ? fmtUSD(dados.depositos_usd) : '—'}</td>
-                        <td style={{ fontSize:12 }}>{r2(dados.saques_usd) > 0 ? `-${fmtUSD(dados.saques_usd)}` : '—'}</td>
-                        <td></td><td></td>
-                      </>
-                    )}
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {dados.meses.map(m => (
+                      <tr key={m.mes}>
+                        <td style={{ fontWeight:600 }}>{MESES_CURTO[m.mes-1]}</td>
+                        <td style={{ color: r2(m.ganho_usd) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
+                          {r2(m.ganho_usd) >= 0 ? '+' : ''}{fmtUSD(m.ganho_usd)}
+                        </td>
+                        <td style={{ color: r2(m.ganho_brl) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
+                          {fmtBRL(m.ganho_brl)}
+                        </td>
+                        <td style={{ color:'var(--muted)', fontSize:12 }}>
+                          {m.ptax ? `R$ ${r2(m.ptax).toFixed(4)}` : '—'}
+                        </td>
+                        <td style={{ fontSize:12, color:'var(--muted)' }}>
+                          {r2(m.depositos_usd) > 0 ? fmtUSD(m.depositos_usd) : '—'}
+                        </td>
+                        <td style={{ fontSize:12, color: r2(m.saques_usd) > 0 ? 'var(--danger)' : 'var(--muted)' }}>
+                          {r2(m.saques_usd) > 0 ? `-${fmtUSD(m.saques_usd)}` : '—'}
+                        </td>
+                        <td style={{ fontSize:12, color:'var(--muted)', textAlign:'center' }}>
+                          {m.operacoes_count || 0}
+                        </td>
+                        <td>
+                          <button className="btn btn-ghost" style={{ padding:'4px 12px', fontSize:11 }}
+                            onClick={() => navigate(`/apuracao/${m.id}`)}>
+                            Detalhe
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ fontWeight:700, borderTop:'2px solid var(--border)', background:'var(--surface2)' }}>
+                      <td>TOTAL</td>
+                      <td style={{ color: r2(dados.lucro_usd) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>{fmtUSD(dados.lucro_usd)}</td>
+                      <td style={{ color: r2(dados.lucro_brl) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>{fmtBRL(dados.lucro_brl)}</td>
+                      <td>—</td>
+                      <td style={{ fontSize:12 }}>{r2(dados.depositos_usd) > 0 ? fmtUSD(dados.depositos_usd) : '—'}</td>
+                      <td style={{ fontSize:12 }}>{r2(dados.saques_usd) > 0 ? `-${fmtUSD(dados.saques_usd)}` : '—'}</td>
+                      <td></td><td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            ) : (
+              <div style={{ textAlign:'center', padding:'32px 16px', color:'var(--muted)' }}>
+                <div style={{ fontSize:28, marginBottom:8 }}>🔒</div>
+                <div style={{ fontSize:14 }}>Detalhe mensal disponível após desbloqueio</div>
+              </div>
+            )}
           </div>
         )}
 
-        {/* UPSELL ANUAL (pós-desbloqueio) */}
-        {desbloqueado && (
-          <div style={{
-            background:'var(--surface)', border:'1px solid rgba(167,139,250,0.3)',
-            borderRadius:16, padding:24, textAlign:'center',
-          }}>
-            <div style={{ fontSize:14, color:'#a78bfa', fontWeight:700, marginBottom:8 }}>ACESSO ANUAL</div>
-            <p style={{ color:'var(--muted)', fontSize:14, marginBottom:16 }}>
-              Quer poder reprocessar o PDF quando quiser, acessar anos anteriores e ter histórico completo?
-              Adicione o <strong style={{color:'#a78bfa'}}>Acesso Anual por R$ 49,00</strong>.
-            </p>
-            <button className="btn btn-ghost"
-              style={{ borderColor:'#a78bfa', color:'#a78bfa', padding:'10px 24px' }}
-              onClick={() => navigate('/upgrade')}>
-              Ver Acesso Anual →
-            </button>
-          </div>
-        )}
       </div>
     </Layout>
   )

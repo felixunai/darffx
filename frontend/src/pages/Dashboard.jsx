@@ -248,14 +248,14 @@ export default function Dashboard() {
                     <td style={{ color: r2(a.lucro_brl) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
                       {fmtBRL(a.lucro_brl)}
                     </td>
-                    <td style={{ fontSize:12, color:'var(--muted)' }}>
-                      {r2(a.depositos_usd) > 0 ? fmtUSD(a.depositos_usd) : '—'}
-                    </td>
-                    <td style={{ fontSize:12, color: r2(a.saques_usd) > 0 ? 'var(--danger)' : 'var(--muted)' }}>
-                      {r2(a.saques_usd) > 0 ? `-${fmtUSD(a.saques_usd)}` : '—'}
-                    </td>
                     {a.desbloqueado ? (
                       <>
+                        <td style={{ fontSize:12, color:'var(--muted)' }}>
+                          {r2(a.depositos_usd) > 0 ? fmtUSD(a.depositos_usd) : '—'}
+                        </td>
+                        <td style={{ fontSize:12, color: r2(a.saques_usd) > 0 ? 'var(--danger)' : 'var(--muted)' }}>
+                          {r2(a.saques_usd) > 0 ? `-${fmtUSD(a.saques_usd)}` : '—'}
+                        </td>
                         <td style={{ fontSize:12, color: r2(a.prejuizo_anterior_brl) > 0 ? 'var(--warn)' : 'var(--muted)' }}>
                           {r2(a.prejuizo_anterior_brl) > 0 ? `-${fmtBRL(a.prejuizo_anterior_brl)}` : '—'}
                         </td>
@@ -276,8 +276,7 @@ export default function Dashboard() {
                       </>
                     ) : (
                       <>
-                        <td colSpan={2} style={{ fontSize:12, color:'var(--muted)', textAlign:'center' }}>—</td>
-                        <td colSpan={5} style={{ textAlign:'center' }}>
+                        <td colSpan={7} style={{ textAlign:'center' }}>
                           <span style={{ fontSize:12, color:'var(--muted)' }}>🔒 Relatório bloqueado</span>
                         </td>
                         <td>

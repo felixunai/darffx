@@ -19,7 +19,7 @@ from ..deps import get_db, get_admin_user
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
-PLANOS_VALIDOS = {"free", "mensal", "anual", "admin"}
+PLANOS_VALIDOS = {"free", "pago", "admin"}
 
 class AlterarPlanoIn(BaseModel):
     plano: str
@@ -75,16 +75,15 @@ def alterar_plano(
 
     u.plano = body.plano
 
-    if body.plano == "free":
+    if body.plano in ("free", "admin"):
         u.plano_expiracao = None
-    elif body.plano == "admin":
-        u.plano_expiracao = None
-    elif body.plano == "mensal":
-        dias = body.dias or 30
-        u.plano_expiracao = datetime.utcnow() + timedelta(days=dias)
-    elif body.plano == "anual":
-        dias = body.dias or 365
-        u.plano_expiracao = datetime.utcnow() + timedelta(days=dias)
+    elif body.plano == "pago":
+        # Expiração: 31/12 do ano vigente (ou dias customizados)
+        if body.dias:
+            u.plano_expiracao = datetime.utcnow() + timedelta(days=body.dias)
+        else:
+            ano = datetime.utcnow().year
+            u.plano_expiracao = datetime(ano, 12, 31, 23, 59, 59)
 
     db.commit()
     return _user_dict(u, db)

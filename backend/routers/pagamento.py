@@ -1,16 +1,15 @@
 """
 Router: /pagamento
 
-Gerencia checkout Stripe e desbloqueio de relatórios.
+Plano único: R$69,90 — acesso completo até 31/12 do ano vigente.
 
-POST /pagamento/checkout/relatorio/{ano}  — cria sessão Stripe (R$69)
-POST /pagamento/checkout/anual            — cria sessão upsell Stripe (R$49)
-POST /pagamento/webhook                   — recebe eventos Stripe
-GET  /pagamento/status/{ano}             — verifica se relatório está desbloqueado
+POST /pagamento/checkout        — cria sessão Stripe
+POST /pagamento/webhook         — recebe eventos Stripe
+GET  /pagamento/status/{ano}    — verifica se relatório está desbloqueado
 """
 from fastapi import APIRouter, HTTPException, Depends, Request, Header
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime
 import uuid
 
 from ..config import settings
@@ -19,8 +18,7 @@ from ..deps import get_db, get_current_user
 
 router = APIRouter(prefix="/pagamento", tags=["pagamento"])
 
-PRECO_RELATORIO = settings.PRECO_RELATORIO_CENTAVOS   # R$69,00
-PRECO_ANUAL     = settings.PRECO_ANUAL_CENTAVOS       # R$49,00
+PRECO = settings.PRECO_ACESSO_CENTAVOS   # R$69,90
 
 
 def _get_stripe():
@@ -38,27 +36,25 @@ def _get_stripe():
         raise HTTPException(503, "Stripe não instalado no servidor.")
 
 
-# ── CHECKOUT RELATÓRIO COMPLETO ───────────────────────────────────────────────
+def _expiracao_ano_vigente() -> datetime:
+    """Retorna 31/12 do ano corrente às 23:59:59 UTC."""
+    ano = datetime.utcnow().year
+    return datetime(ano, 12, 31, 23, 59, 59)
 
-@router.post("/checkout/relatorio/{ano}")
-async def checkout_relatorio(
-    ano: int,
+
+# ── CHECKOUT ──────────────────────────────────────────────────────────────────
+
+@router.post("/checkout")
+async def checkout(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_current_user),
 ):
-    """Cria sessão de pagamento Stripe para desbloquear relatório de um ano (R$69)."""
-    # Verifica se já está desbloqueado
-    anual = db.query(ApuracaoAnual).filter_by(user_id=usuario.id, ano=ano).first()
-    if not anual:
-        raise HTTPException(404, "Apuração anual não encontrada.")
-    if anual.desbloqueado:
-        raise HTTPException(400, "Este relatório já está desbloqueado.")
+    """Cria sessão de pagamento Stripe — Acesso Completo R$69,90 (expira 31/12)."""
+    # Já tem plano pago e não expirado
+    if usuario.plano == "pago" and usuario.plano_expiracao and usuario.plano_expiracao > datetime.utcnow():
+        raise HTTPException(400, "Você já possui acesso ativo até 31/12.")
 
-    # Verifica se já tem pagamento pendente
-    pag_existente = db.query(Pagamento).filter_by(
-        user_id=usuario.id, tipo="relatorio", ano=ano, status="pendente"
-    ).first()
-
+    ano_atual = datetime.utcnow().year
     stripe = _get_stripe()
     session = stripe.checkout.Session.create(
         payment_method_types=["card"],
@@ -66,30 +62,29 @@ async def checkout_relatorio(
             "price_data": {
                 "currency": "brl",
                 "product_data": {
-                    "name": f"DarfFX — Relatório IR Forex {ano}",
-                    "description": f"Cálculo oficial 15% · PTAX automático · Relatório para IRPF {ano}",
+                    "name": f"DarfFX — Acesso Completo {ano_atual}",
+                    "description": f"Cálculo IR Forex · PTAX automático · Relatório IRPF · Válido até 31/12/{ano_atual}",
                 },
-                "unit_amount": PRECO_RELATORIO,
+                "unit_amount": PRECO,
             },
             "quantity": 1,
         }],
         mode="payment",
         customer_email=usuario.email,
-        success_url=f"{settings.FRONTEND_URL}/apuracao/anual/{ano}?desbloqueado=1",
-        cancel_url=f"{settings.FRONTEND_URL}/upgrade?ano={ano}&cancelado=1",
+        success_url=f"{settings.FRONTEND_URL}/apuracao/anual/{ano_atual}?desbloqueado=1",
+        cancel_url=f"{settings.FRONTEND_URL}/upgrade?cancelado=1",
         metadata={
             "user_id": usuario.id,
-            "ano": str(ano),
-            "tipo": "relatorio",
+            "tipo": "acesso",
         },
     )
 
     pagamento = Pagamento(
         id=str(uuid.uuid4()),
         user_id=usuario.id,
-        tipo="relatorio",
-        ano=ano,
-        valor_brl=PRECO_RELATORIO / 100,
+        tipo="acesso",
+        ano=ano_atual,
+        valor_brl=PRECO / 100,
         stripe_session_id=session.id,
         status="pendente",
     )
@@ -97,56 +92,6 @@ async def checkout_relatorio(
     db.commit()
 
     return {"checkout_url": session.url, "session_id": session.id}
-
-
-# ── CHECKOUT ACESSO ANUAL (UPSELL) ────────────────────────────────────────────
-
-@router.post("/checkout/anual")
-async def checkout_anual(
-    db: Session = Depends(get_db),
-    usuario: User = Depends(get_current_user),
-):
-    """Cria sessão Stripe para Acesso Anual ilimitado (R$49 — upsell pós-relatório)."""
-    if usuario.plano == "anual" and usuario.plano_expiracao and usuario.plano_expiracao > datetime.utcnow():
-        raise HTTPException(400, "Você já possui Acesso Anual ativo.")
-
-    stripe = _get_stripe()
-    session = stripe.checkout.Session.create(
-        payment_method_types=["card"],
-        line_items=[{
-            "price_data": {
-                "currency": "brl",
-                "product_data": {
-                    "name": "DarfFX — Acesso Anual",
-                    "description": "Reprocessamento ilimitado · Histórico completo · 12 meses",
-                },
-                "unit_amount": PRECO_ANUAL,
-            },
-            "quantity": 1,
-        }],
-        mode="payment",
-        customer_email=usuario.email,
-        success_url=f"{settings.FRONTEND_URL}/?upgrade=anual",
-        cancel_url=f"{settings.FRONTEND_URL}/?cancelado=1",
-        metadata={
-            "user_id": usuario.id,
-            "tipo": "anual",
-        },
-    )
-
-    pagamento = Pagamento(
-        id=str(uuid.uuid4()),
-        user_id=usuario.id,
-        tipo="anual",
-        ano=None,
-        valor_brl=PRECO_ANUAL / 100,
-        stripe_session_id=session.id,
-        status="pendente",
-    )
-    db.add(pagamento)
-    db.commit()
-
-    return {"checkout_url": session.url}
 
 
 # ── WEBHOOK STRIPE ────────────────────────────────────────────────────────────
@@ -171,7 +116,6 @@ async def stripe_webhook(
         session = event["data"]["object"]
         meta    = session.get("metadata", {})
         user_id = meta.get("user_id")
-        tipo    = meta.get("tipo")
         session_id = session["id"]
 
         # Marca pagamento como pago
@@ -179,23 +123,16 @@ async def stripe_webhook(
         if pag:
             pag.status = "pago"
 
-        if tipo == "relatorio":
-            ano = int(meta.get("ano", 0))
-            if ano and user_id:
-                anual = db.query(ApuracaoAnual).filter_by(user_id=user_id, ano=ano).first()
-                if anual:
-                    anual.desbloqueado = True
-
-        elif tipo == "anual":
-            if user_id:
-                user = db.query(User).filter_by(id=user_id).first()  # noqa: F821
-                if user:
-                    user.plano = "anual"
-                    user.plano_expiracao = datetime.utcnow() + timedelta(days=365)
-                    # Desbloqueia todos os relatórios do usuário
-                    db.query(ApuracaoAnual).filter_by(user_id=user_id).update(
-                        {"desbloqueado": True}
-                    )
+        if user_id:
+            user = db.query(User).filter_by(id=user_id).first()
+            if user:
+                # Seta plano pago com expiração 31/12 do ano vigente
+                user.plano = "pago"
+                user.plano_expiracao = _expiracao_ano_vigente()
+                # Desbloqueia todos os relatórios do usuário
+                db.query(ApuracaoAnual).filter_by(user_id=user_id).update(
+                    {"desbloqueado": True}
+                )
 
         db.commit()
 
@@ -212,11 +149,11 @@ def status_relatorio(
 ):
     anual = db.query(ApuracaoAnual).filter_by(user_id=usuario.id, ano=ano).first()
     is_admin = usuario.email == "felixunai@gmail.com"
-    is_anual = (
-        usuario.plano == "anual"
+    is_pago = (
+        usuario.plano in ("pago", "admin")
         and (usuario.plano_expiracao is None or usuario.plano_expiracao > datetime.utcnow())
     )
-    desbloqueado = bool(anual and anual.desbloqueado) or is_admin or is_anual
+    desbloqueado = bool(anual and anual.desbloqueado) or is_admin or is_pago
     return {
         "ano": ano,
         "desbloqueado": desbloqueado,
