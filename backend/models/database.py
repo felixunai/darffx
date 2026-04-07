@@ -21,18 +21,23 @@ class User(Base):
 
 class Apuracao(Base):
     __tablename__ = "apuracoes"
-    id            = Column(String, primary_key=True)
-    user_id       = Column(String, ForeignKey("users.id"), nullable=False)
-    mes           = Column(Integer, nullable=False)   # 1-12
-    ano           = Column(Integer, nullable=False)
-    ganho_usd     = Column(Float, default=0.0)
-    ptax          = Column(Float, nullable=True)
-    ganho_brl     = Column(Float, default=0.0)
-    aliquota      = Column(Float, default=0.15)
-    imposto_brl   = Column(Float, default=0.0)
-    tem_day_trade = Column(Boolean, default=False)
-    darf_pago     = Column(Boolean, default=False)
-    created_at    = Column(DateTime, default=datetime.utcnow)
+    id              = Column(String, primary_key=True)
+    user_id         = Column(String, ForeignKey("users.id"), nullable=False)
+    mes             = Column(Integer, nullable=False)   # 1-12
+    ano             = Column(Integer, nullable=False)
+    ganho_usd       = Column(Float, default=0.0)
+    ptax            = Column(Float, nullable=True)
+    ganho_brl       = Column(Float, default=0.0)
+    carry_fwd_brl   = Column(Float, default=0.0)   # perdas acumuladas aplicadas
+    base_ir_brl     = Column(Float, default=0.0)   # base tributável após carry fwd
+    aliquota        = Column(Float, default=0.15)
+    imposto_brl     = Column(Float, default=0.0)
+    tem_day_trade   = Column(Boolean, default=False)
+    depositos_usd   = Column(Float, default=0.0)
+    saques_usd      = Column(Float, default=0.0)
+    vencimento_darf = Column(Date, nullable=True)
+    darf_pago       = Column(Boolean, default=False)
+    created_at      = Column(DateTime, default=datetime.utcnow)
 
     user       = relationship("User", back_populates="apuracoes")
     operacoes  = relationship("Operacao", back_populates="apuracao", cascade="all, delete")

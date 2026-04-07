@@ -1,6 +1,6 @@
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from jose import jwt, JWTError
 
@@ -10,8 +10,24 @@ from .models.database import Base, User
 engine = create_engine(settings.DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
+# Novas colunas adicionadas ao modelo — migração incremental para tabelas existentes
+_MIGRATIONS = [
+    "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS carry_fwd_brl FLOAT DEFAULT 0",
+    "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS base_ir_brl FLOAT DEFAULT 0",
+    "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS depositos_usd FLOAT DEFAULT 0",
+    "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS saques_usd FLOAT DEFAULT 0",
+    "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS vencimento_darf DATE",
+]
+
 def init_db():
     Base.metadata.create_all(bind=engine)
+    with engine.connect() as conn:
+        for sql in _MIGRATIONS:
+            try:
+                conn.execute(text(sql))
+                conn.commit()
+            except Exception:
+                conn.rollback()
 
 def get_db():
     db = SessionLocal()

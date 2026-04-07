@@ -44,17 +44,25 @@ export default function Dashboard() {
 
   const totalImposto = apuracoes.reduce((s, a) => s + (a.imposto_brl || 0), 0)
   const totalGanho   = apuracoes.reduce((s, a) => s + (a.ganho_brl  || 0), 0)
+  const totalDepositos = apuracoes.reduce((s, a) => s + (a.depositos_usd || 0), 0)
   const pendentes    = apuracoes.filter(a => a.imposto_brl > 0 && !a.darf_pago).length
 
   const chartData = [...apuracoes]
     .sort((a, b) => a.ano - b.ano || a.mes - b.mes)
     .map(a => ({
       name:   `${MESES[a.mes-1]}/${String(a.ano).slice(2)}`,
-      imposto: parseFloat(a.imposto_brl.toFixed(2)),
-      ganho:   parseFloat(a.ganho_brl.toFixed(2)),
+      imposto: parseFloat((a.imposto_brl || 0).toFixed(2)),
+      ganho:   parseFloat((a.ganho_brl || 0).toFixed(2)),
     }))
 
-  const fmt = (v) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits:2 })}`
+  const fmtBRL = (v) => `R$ ${(v || 0).toLocaleString('pt-BR', { minimumFractionDigits:2 })}`
+  const fmtUSD = (v) => `US$ ${(v || 0).toLocaleString('pt-BR', { minimumFractionDigits:2 })}`
+
+  const fmtVenc = (iso) => {
+    if (!iso) return '—'
+    const [y, m, d] = iso.split('-')
+    return `${d}/${m}/${y}`
+  }
 
   return (
     <Layout>
@@ -78,8 +86,8 @@ export default function Dashboard() {
           {/* STATS */}
           <div className="grid-4" style={{ marginBottom:24 }}>
             <CardStat label="Total de meses" valor={apuracoes.length} />
-            <CardStat label="Ganho total (BRL)" valor={fmt(totalGanho)} cor="var(--accent)" />
-            <CardStat label="Imposto total" valor={fmt(totalImposto)} cor="var(--warn)" />
+            <CardStat label="Ganho total (BRL)" valor={fmtBRL(totalGanho)} cor={totalGanho >= 0 ? 'var(--accent)' : 'var(--danger)'} />
+            <CardStat label="Imposto total" valor={fmtBRL(totalImposto)} cor="var(--warn)" />
             <CardStat label="DARFs pendentes" valor={pendentes} cor={pendentes > 0 ? 'var(--danger)' : undefined} />
           </div>
 
@@ -107,16 +115,21 @@ export default function Dashboard() {
           )}
 
           {/* TABELA */}
-          <div className="card">
+          <div className="card" style={{ overflowX:'auto' }}>
             <h3 style={{ marginBottom:20, fontSize:15 }}>Histórico de apurações</h3>
-            <table className="tabela">
+            <table className="tabela" style={{ minWidth:900 }}>
               <thead>
                 <tr>
                   <th>Mês / Ano</th>
                   <th>Resultado (USD)</th>
                   <th>PTAX</th>
                   <th>Resultado (BRL)</th>
+                  <th>Depósitos</th>
+                  <th>Saques</th>
+                  <th>Carry Fwd</th>
+                  <th>Alíquota</th>
                   <th>Imposto</th>
+                  <th>Venc. DARF</th>
                   <th>Status</th>
                   <th></th>
                 </tr>
@@ -126,12 +139,30 @@ export default function Dashboard() {
                   <tr key={a.id}>
                     <td style={{ fontWeight:600 }}>{MESES[a.mes-1]} / {a.ano}</td>
                     <td style={{ color: a.ganho_usd >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
-                      {a.ganho_usd >= 0 ? '+' : ''}US$ {a.ganho_usd.toLocaleString('pt-BR',{minimumFractionDigits:2})}
+                      {a.ganho_usd >= 0 ? '+' : ''}US$ {(a.ganho_usd || 0).toLocaleString('pt-BR',{minimumFractionDigits:2})}
                     </td>
                     <td style={{ color:'var(--muted)' }}>R$ {a.ptax?.toFixed(4) || '—'}</td>
-                    <td>{fmt(a.ganho_brl)}</td>
+                    <td style={{ color: a.ganho_brl >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
+                      {fmtBRL(a.ganho_brl)}
+                    </td>
+                    <td style={{ color:'var(--muted)', fontSize:12 }}>
+                      {a.depositos_usd > 0 ? fmtUSD(a.depositos_usd) : '—'}
+                    </td>
+                    <td style={{ color:'var(--muted)', fontSize:12 }}>
+                      {a.saques_usd > 0 ? fmtUSD(a.saques_usd) : '—'}
+                    </td>
+                    <td style={{ color: (a.carry_fwd_brl || 0) > 0 ? 'var(--warn)' : 'var(--muted)', fontSize:12 }}>
+                      {(a.carry_fwd_brl || 0) > 0 ? `-${fmtBRL(a.carry_fwd_brl)}` : '—'}
+                    </td>
+                    <td style={{ color:'var(--muted)', fontSize:12 }}>
+                      {((a.aliquota || 0.15) * 100).toFixed(0)}%
+                      {a.tem_day_trade && <span style={{ color:'var(--warn)', marginLeft:4, fontSize:10 }}>DT</span>}
+                    </td>
                     <td style={{ fontWeight:600, color: a.imposto_brl > 0 ? 'var(--warn)' : 'var(--accent)' }}>
-                      {fmt(a.imposto_brl)}
+                      {fmtBRL(a.imposto_brl)}
+                    </td>
+                    <td style={{ fontSize:12, color:'var(--muted)' }}>
+                      {fmtVenc(a.vencimento_darf)}
                     </td>
                     <td>
                       {a.imposto_brl === 0

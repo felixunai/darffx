@@ -45,12 +45,11 @@ async def upload_extrato(
     if not operacoes:
         raise HTTPException(422, "Nenhuma operação encontrada no arquivo.")
 
-    # 2. Agrupa por mês/ano (inclui OPENED para detectar day trade)
+    # 2. Agrupa por mês/ano (inclui todos os tipos)
     por_mes: dict = defaultdict(list)
     for op in operacoes:
-        if op.tipo in ("CLOSED", "OPENED"):
-            chave = (op.data.year, op.data.month)
-            por_mes[chave].append(op)
+        chave = (op.data.year, op.data.month)
+        por_mes[chave].append(op)
 
     tem_closed = any(
         op.tipo == "CLOSED" for ops in por_mes.values() for op in ops
@@ -58,24 +57,58 @@ async def upload_extrato(
     if not por_mes or not tem_closed:
         raise HTTPException(422, "Nenhuma operação CLOSED encontrada.")
 
-    # 3. Para cada mês, busca PTAX e calcula
+    # 3. Carry Forward: lê perdas acumuladas de apurações já existentes (anteriores)
+    apuracoes_existentes = (
+        db.query(Apuracao)
+        .filter_by(user_id=usuario.id)
+        .order_by(Apuracao.ano, Apuracao.mes)
+        .all()
+    )
+    acumulado_perdas_brl = 0.0
+    for ap in apuracoes_existentes:
+        if ap.ganho_brl < 0:
+            acumulado_perdas_brl += abs(ap.ganho_brl)
+        elif ap.ganho_brl > 0:
+            acumulado_perdas_brl = max(0.0, acumulado_perdas_brl - ap.ganho_brl)
+
+    # 4. Para cada mês (ordem cronológica), busca PTAX e calcula
     resultados = []
     for (ano, mes), ops in sorted(por_mes.items()):
-        # verifica se já existe apuração para este mês
         existente = db.query(Apuracao).filter_by(
             user_id=usuario.id, mes=mes, ano=ano
         ).first()
         if existente:
             resultados.append(_apuracao_to_dict(existente))
+            # atualiza carry forward com base no resultado existente
+            if existente.ganho_brl < 0:
+                acumulado_perdas_brl += abs(existente.ganho_brl)
+            elif existente.ganho_brl > 0:
+                acumulado_perdas_brl = max(0.0, acumulado_perdas_brl - existente.ganho_brl)
             continue
 
         ptax = await buscar_ptax(mes, ano)
         if not ptax:
-            ptax = 0.0  # salva com PTAX zerado para entrada manual
+            ptax = 0.0
 
-        resultado = calcular_ir_mensal(ops, ptax, mes, ano)
+        resultado = calcular_ir_mensal(ops, ptax, mes, ano, carry_fwd_brl=acumulado_perdas_brl)
 
-        # 4. Salva no banco
+        # Calcula depósitos e saques do mês
+        depositos_usd = sum(
+            op.valor_usd for op in ops
+            if op.tipo == "DEPOSIT" and op.valor_usd > 0
+        )
+        saques_usd = sum(
+            abs(op.valor_usd) for op in ops
+            if op.tipo in ("DEPOSIT", "WITHDRAWAL") and op.valor_usd < 0
+        )
+
+        # Atualiza carry forward para próximo mês
+        if resultado.ganho_brl < 0:
+            acumulado_perdas_brl += abs(resultado.ganho_brl)
+        elif resultado.ganho_brl > 0:
+            acumulado_perdas_brl = max(0.0, acumulado_perdas_brl - resultado.ganho_brl)
+
+        # 5. Salva no banco
         apuracao = Apuracao(
             id=str(uuid.uuid4()),
             user_id=usuario.id,
@@ -83,14 +116,19 @@ async def upload_extrato(
             ganho_usd=resultado.ganho_usd,
             ptax=ptax,
             ganho_brl=resultado.ganho_brl,
+            carry_fwd_brl=resultado.carry_fwd_brl,
+            base_ir_brl=resultado.base_tributavel_brl,
             aliquota=resultado.aliquota,
             imposto_brl=resultado.imposto_brl,
             tem_day_trade=resultado.tem_day_trade,
+            depositos_usd=depositos_usd,
+            saques_usd=saques_usd,
+            vencimento_darf=resultado.vencimento_darf,
         )
         db.add(apuracao)
 
         for op in ops:
-            if op.tipo not in ("CLOSED", "OPENED"):
+            if op.tipo not in ("CLOSED", "OPENED", "DEPOSIT"):
                 continue
             db.add(Operacao(
                 id=str(uuid.uuid4()),
@@ -152,10 +190,13 @@ def download_pdf(
         ganho_usd=apuracao.ganho_usd,
         ptax=apuracao.ptax,
         ganho_brl=apuracao.ganho_brl,
+        carry_fwd_brl=apuracao.carry_fwd_brl or 0.0,
+        base_tributavel_brl=apuracao.base_ir_brl or apuracao.ganho_brl,
         aliquota=apuracao.aliquota,
         imposto_brl=apuracao.imposto_brl,
         tem_day_trade=apuracao.tem_day_trade,
         operacoes_count=len(apuracao.operacoes),
+        vencimento_darf=apuracao.vencimento_darf,
     )
 
     pdf_bytes = gerar_relatorio_pdf(resultado, usuario.nome or usuario.email)
@@ -183,7 +224,10 @@ def atualizar_ptax(
 
     apuracao.ptax = ptax
     apuracao.ganho_brl = apuracao.ganho_usd * ptax
-    apuracao.imposto_brl = apuracao.ganho_brl * apuracao.aliquota if apuracao.ganho_brl > 0 else 0
+    carry = apuracao.carry_fwd_brl or 0.0
+    base = max(0.0, apuracao.ganho_brl - carry) if apuracao.ganho_brl > 0 else 0.0
+    apuracao.base_ir_brl = base
+    apuracao.imposto_brl = base * apuracao.aliquota if base > 0 else 0.0
     db.commit()
     return _apuracao_to_dict(apuracao)
 
@@ -227,9 +271,14 @@ def _apuracao_to_dict(a: Apuracao, incluir_operacoes=False) -> dict:
         "ganho_usd": a.ganho_usd,
         "ptax": a.ptax,
         "ganho_brl": a.ganho_brl,
+        "carry_fwd_brl": a.carry_fwd_brl or 0.0,
+        "base_ir_brl": a.base_ir_brl or a.ganho_brl,
         "aliquota": a.aliquota,
         "imposto_brl": a.imposto_brl,
         "tem_day_trade": a.tem_day_trade,
+        "depositos_usd": a.depositos_usd or 0.0,
+        "saques_usd": a.saques_usd or 0.0,
+        "vencimento_darf": a.vencimento_darf.isoformat() if a.vencimento_darf else None,
         "darf_pago": a.darf_pago,
         "created_at": a.created_at.isoformat() if a.created_at else None,
     }
