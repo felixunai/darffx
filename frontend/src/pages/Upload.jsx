@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Layout from '../components/Layout'
-import api    from '../api'
+import api from '../api'
 
 const MSGS_PROGRESSO = [
   '☕ Pegue um café enquanto processamos tudo...',
@@ -24,6 +24,11 @@ export default function Upload() {
   const [planLimit,  setPlanLimit] = useState(false)
   const [msgIdx,     setMsgIdx]    = useState(0)
   const [elapsed,    setElapsed]   = useState(0)
+  const [promo,      setPromo]     = useState(null)
+
+  useEffect(() => {
+    api.get('/pagamento/promo').then(r => setPromo(r.data)).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!loading) { setMsgIdx(0); setElapsed(0); return }
@@ -137,29 +142,49 @@ export default function Upload() {
           </ol>
         </div>
 
-        {planLimit && (
-          <div style={{
-            background:'linear-gradient(135deg,rgba(0,229,160,0.06),rgba(0,149,255,0.06))',
-            border:'2px solid var(--accent)', borderRadius:16, padding:24, marginTop:16, textAlign:'center'
-          }}>
-            <div style={{ fontSize:32, marginBottom:8 }}>🚀</div>
-            <h3 style={{ fontSize:17, marginBottom:8, fontFamily:'Syne' }}>
-              Você já processou seu extrato gratuito!
-            </h3>
-            <p style={{ color:'var(--muted)', fontSize:14, marginBottom:16, maxWidth:380, margin:'0 auto 16px' }}>
-              Com o <strong style={{color:'var(--accent)'}}>Acesso Completo por R$ 69,90</strong> você pode
-              reprocessar quantas vezes quiser, ver o imposto exato e exportar o relatório para o IRPF.
-              Válido até <strong style={{color:'var(--accent)'}}>31/12/{new Date().getFullYear()}</strong>.
-            </p>
-            <button className="btn btn-primary" style={{ padding:'12px 28px', fontSize:15, borderRadius:12 }}
-              onClick={() => navigate('/upgrade')}>
-              Desbloquear Acesso Completo →
-            </button>
-            <p style={{ fontSize:11, color:'var(--muted)', marginTop:10 }}>
-              Pagamento único · Stripe · Acesso imediato
-            </p>
-          </div>
-        )}
+        {planLimit && (() => {
+          const promoAtiva = promo?.promo_ativa
+          const preco = promoAtiva ? promo.preco_brl : 'R$ 69,90'
+          const cor   = promoAtiva ? 'var(--warn)' : 'var(--accent)'
+          return (
+            <div style={{
+              background: promoAtiva
+                ? 'linear-gradient(135deg,rgba(255,179,71,0.06),rgba(255,120,0,0.04))'
+                : 'linear-gradient(135deg,rgba(0,229,160,0.06),rgba(0,149,255,0.06))',
+              border:`2px solid ${cor}`, borderRadius:16, padding:24, marginTop:16, textAlign:'center'
+            }}>
+              {promoAtiva && (
+                <div style={{
+                  display:'inline-flex', alignItems:'center', gap:6, marginBottom:10,
+                  background:'rgba(255,179,71,0.15)', border:'1px solid rgba(255,179,71,0.4)',
+                  borderRadius:20, padding:'3px 12px', fontSize:11, fontWeight:700, color:'var(--warn)',
+                }}>
+                  🏷️ OFERTA ESPECIAL · TEMPO LIMITADO
+                </div>
+              )}
+              <div style={{ fontSize:32, marginBottom:8 }}>🚀</div>
+              <h3 style={{ fontSize:17, marginBottom:8, fontFamily:'Syne' }}>
+                Desbloqueie o Acesso Completo
+              </h3>
+              <p style={{ color:'var(--muted)', fontSize:14, marginBottom:16, maxWidth:380, margin:'0 auto 16px' }}>
+                Com o{' '}
+                <strong style={{color:cor}}>Acesso Completo por {preco}</strong>
+                {promoAtiva && <span style={{color:'var(--muted)',fontSize:12,marginLeft:4,textDecoration:'line-through'}}>R$ 69,90</span>}
+                {' '}você processa meses ilimitados, vê o imposto exato e exporta o relatório para o IRPF.
+                Válido até <strong style={{color:cor}}>31/12/{new Date().getFullYear()}</strong>.
+              </p>
+              <button
+                className="btn btn-primary"
+                style={{ padding:'12px 28px', fontSize:15, borderRadius:12, background: promoAtiva ? 'var(--warn)' : undefined, color: promoAtiva ? '#000' : undefined }}
+                onClick={() => navigate('/upgrade')}>
+                Desbloquear Acesso Completo →
+              </button>
+              <p style={{ fontSize:11, color:'var(--muted)', marginTop:10 }}>
+                Pagamento único · Stripe · Acesso imediato
+              </p>
+            </div>
+          )
+        })()}
 
         {erro && (
           <div style={{ background:'rgba(255,77,109,0.1)', border:'1px solid var(--danger)', color:'var(--danger)', padding:'12px 16px', borderRadius:10, marginTop:16, fontSize:13 }}>
