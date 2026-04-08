@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
@@ -5,17 +6,39 @@ export default function Layout({ children }) {
   const navigate  = useNavigate()
   const location  = useLocation()
   const { user, logout } = useAuth()
+  const [menuAberto, setMenuAberto] = useState(false)
 
   const ativo = (path) => location.pathname === path ? 'nav-item active' : 'nav-item'
 
+  const navegar = (path) => { navigate(path); setMenuAberto(false) }
+
   return (
     <div className="layout">
-      <aside className="sidebar">
+      {/* Botão hamburguer — só aparece no mobile */}
+      <button
+        className="menu-mobile-btn"
+        onClick={() => setMenuAberto(v => !v)}
+        aria-label="Menu"
+      >
+        {menuAberto ? '✕' : '☰'}
+      </button>
+
+      {/* Overlay escuro ao abrir menu mobile */}
+      {menuAberto && (
+        <div className="menu-overlay" onClick={() => setMenuAberto(false)} />
+      )}
+
+      <aside className={`sidebar${menuAberto ? ' sidebar-aberta' : ''}`}>
         <div style={{ marginBottom: 32 }}>
           <div style={{ fontFamily:'Syne',fontWeight:800,fontSize:20 }}>
             Darf<span style={{color:'var(--accent)'}}>FX</span>
           </div>
-          <div style={{ fontSize:12, color:'var(--muted)', marginTop:4 }}>
+          {user?.nome && (
+            <div style={{ fontSize:14, fontWeight:600, marginTop:8, color:'var(--text)' }}>
+              {user.nome}
+            </div>
+          )}
+          <div style={{ fontSize:12, color:'var(--muted)', marginTop:2 }}>
             {user?.email}
           </div>
           {user?.plano && (
@@ -32,14 +55,14 @@ export default function Layout({ children }) {
         </div>
 
         <nav style={{ display:'flex', flexDirection:'column', gap:4, flex:1 }}>
-          <button className={ativo('/')} onClick={() => navigate('/')}>
+          <button className={ativo('/')} onClick={() => navegar('/')}>
             <span>▦</span> Dashboard
           </button>
-          <button className={ativo('/upload')} onClick={() => navigate('/upload')}>
+          <button className={ativo('/upload')} onClick={() => navegar('/upload')}>
             <span>↑</span> Novo Upload
           </button>
           {user?.is_admin && (
-            <button className={ativo('/admin')} onClick={() => navigate('/admin')}>
+            <button className={ativo('/admin')} onClick={() => navegar('/admin')}>
               <span>⚙</span> Admin
             </button>
           )}

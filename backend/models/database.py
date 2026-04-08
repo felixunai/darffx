@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Date, DateTime, Boolean, Integer, ForeignKey
+from sqlalchemy import Column, String, Float, Date, DateTime, Boolean, Integer, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship, DeclarativeBase
 from datetime import datetime
 
@@ -123,3 +123,14 @@ class ResetToken(Base):
     expires_at = Column(DateTime, nullable=False)
     used       = Column(Boolean, default=False)
     user = relationship("User")
+
+
+class PtaxCache(Base):
+    """Cache de cotações PTAX do Banco Central — evita chamadas repetidas à API BCB."""
+    __tablename__ = "ptax_cache"
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    mes           = Column(Integer, nullable=False)
+    ano           = Column(Integer, nullable=False)
+    ptax          = Column(Float, nullable=False)
+    consultado_em = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("mes", "ano", name="uq_ptax_mes_ano"),)

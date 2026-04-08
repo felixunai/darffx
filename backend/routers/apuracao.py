@@ -24,7 +24,7 @@ from io import BytesIO
 from ..services.parser_avatrade import parse_pdf_avatrade
 from ..services.calculo_ir import buscar_ptax_paralelo, calcular_ir_mensal, calcular_ir_anual
 from ..services.gerador_pdf import gerar_relatorio_pdf
-from ..models.database import Apuracao, ApuracaoAnual, Operacao, User
+from ..models.database import Apuracao, ApuracaoAnual, Operacao, User, PtaxCache
 from ..deps import get_db, get_current_user, ADMIN_EMAIL
 
 router = APIRouter(prefix="/apuracao", tags=["apuracao"])
@@ -71,12 +71,12 @@ async def upload_extrato(
     )
     acumulado_brl = _calcular_carry_forward(apuracoes_existentes)
 
-    # Busca PTAX em paralelo para todos os meses novos (muito mais rápido)
+    # Busca PTAX para todos os meses novos (com cache no banco)
     meses_novos_keys = [
         (ano, mes) for (ano, mes) in sorted(por_mes.keys())
         if not db.query(Apuracao).filter_by(user_id=usuario.id, mes=mes, ano=ano).first()
     ]
-    ptax_cache = await buscar_ptax_paralelo([(mes, ano) for ano, mes in meses_novos_keys])
+    ptax_cache = await _buscar_ptax_com_cache(db, [(mes, ano) for ano, mes in meses_novos_keys])
 
     # Processa meses em ordem cronológica (sequencial para carry forward)
     meses_novos: dict = defaultdict(list)   # ano → [ResultadoMensal]
@@ -349,6 +349,36 @@ def download_pdf(
 
 
 # ── HELPERS INTERNOS ──────────────────────────────────────────────────────────
+
+async def _buscar_ptax_com_cache(
+    db: Session,
+    meses_anos: list[tuple[int, int]],
+) -> dict[tuple[int, int], float]:
+    """
+    Retorna PTAX para cada (mes, ano) usando cache do banco.
+    Apenas meses sem cache são consultados na API BCB — muito mais rápido
+    em reprocessamentos e uploads de PDFs com meses já conhecidos.
+    """
+    resultado: dict[tuple[int, int], float] = {}
+    sem_cache: list[tuple[int, int]] = []
+
+    for mes, ano in meses_anos:
+        cached = db.query(PtaxCache).filter_by(mes=mes, ano=ano).first()
+        if cached:
+            resultado[(mes, ano)] = cached.ptax
+        else:
+            sem_cache.append((mes, ano))
+
+    if sem_cache:
+        novos = await buscar_ptax_paralelo(sem_cache)
+        for (mes, ano), ptax in novos.items():
+            if ptax:
+                db.add(PtaxCache(mes=mes, ano=ano, ptax=ptax))
+        db.commit()
+        resultado.update(novos)
+
+    return resultado
+
 
 def _recalcular_anual(db: Session, user_id: str, ano: int):
     """Recalcula (ou cria) o registro ApuracaoAnual a partir dos meses existentes."""
