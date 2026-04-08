@@ -84,25 +84,19 @@ async def checkout(
     if is_promo:
         nome_produto += " 🏷 Oferta Especial"
 
-    frontend_url = settings.FRONTEND_URL.rstrip("/")
+    frontend_url = settings.FRONTEND_URL.strip().rstrip("/")
     success_url  = f"{frontend_url}/apuracao/anual/{ano_atual}?desbloqueado=1"
     cancel_url   = f"{frontend_url}/upgrade?cancelado=1"
-    import logging
-    logging.info("Stripe checkout | success=%s cancel=%s image=%s",
-                 success_url, cancel_url, settings.STRIPE_PRODUCT_IMAGE_URL)
 
-    product_data = {
+    print(f"[STRIPE] success_url={success_url!r} cancel_url={cancel_url!r} image={settings.STRIPE_PRODUCT_IMAGE_URL!r}", flush=True)
+
+    product_data: dict = {
         "name": nome_produto,
-        "description": (
-            f"Calculo automatico Lei 14.754/2023  |  "
-            f"PTAX automatico Banco Central  |  "
-            f"Exportacao para IRPF  |  "
-            f"Meses ilimitados  |  "
-            f"Valido ate 31/12/{ano_atual}"
-        ),
+        "description": f"Lei 14.754/2023 | PTAX BCB | Exportacao IRPF | Valido ate 31/12/{ano_atual}",
     }
-    if settings.STRIPE_PRODUCT_IMAGE_URL:
-        product_data["images"] = [settings.STRIPE_PRODUCT_IMAGE_URL]
+    img_url = settings.STRIPE_PRODUCT_IMAGE_URL.strip()
+    if img_url:
+        product_data["images"] = [img_url]
 
     session = stripe.checkout.Session.create(
         payment_method_types=["card"],
@@ -116,11 +110,6 @@ async def checkout(
         }],
         mode="payment",
         customer_email=usuario.email,
-        custom_text={
-            "submit": {
-                "message": "Pagamento unico e seguro via Stripe. Acesso liberado imediatamente apos confirmacao.",
-            },
-        },
         success_url=success_url,
         cancel_url=cancel_url,
         metadata={
