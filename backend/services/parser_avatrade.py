@@ -3,15 +3,26 @@ Parser do extrato PDF da AvaTrade (AvaOptions / MT4).
 
 O PDF é gerado pelo "Print to PDF" do Windows — não contém texto extraível.
 Usamos OCR (pytesseract) com classificação por posição X para reconstruir
-as colunas do Cash Ledger corretamente.
+as colunas corretamente.
 
-Colunas detectadas (baseado em página 1654px de largura a 200 DPI):
+Colunas do CASH LEDGER (200 DPI, A4 ≈ 1654px):
   adj_no   : x < 180
   data     : 180–450
   tipo     : 450–600
   descricao: 600–1100
   amount   : 1100–1370
   balance  : 1370+
+
+Abordagem de parsing por seção:
+  1. CASH LEDGER    → somente DEPOSIT e WITHDRAWAL
+                      (adj_no de 8 dígitos começando com '2', ex: 20832319)
+  2. PURCHASE AND SALES → trades REALIZADOS via linhas "TOTAL" (Net P/S)
+                          A data de fechamento do leg CLOSE é usada para
+                          atribuição mensal.
+
+Seções ignoradas (evita double-counting):
+  - TRADE LEDGER  (mesmos valores do Cash Ledger, adj_nos diferentes)
+  - CURRENT STATUS (posições ainda abertas — não realizadas)
 """
 import re
 import tempfile
@@ -29,12 +40,18 @@ try:
 except ImportError:
     OCR_DISPONIVEL = False
 
-# ── LARGURAS DE COLUNA (em pixels a 200 DPI, página A4 ≈ 1654px) ──────────
+# ── LARGURAS DE COLUNA (Cash Ledger, 200 DPI, A4 ≈ 1654px) ──────────────────
 COL_ADJ_MAX  = 180
 COL_DATA_MAX = 450
 COL_TIPO_MAX = 600
 COL_DESC_MAX = 1100
 COL_AMT_MAX  = 1370
+
+# ── SEÇÕES DO EXTRATO ─────────────────────────────────────────────────────────
+_SEC_CASH   = "CASH_LEDGER"
+_SEC_TRADE  = "TRADE_LEDGER"
+_SEC_PS     = "PURCHASE_SALES"
+_SEC_STATUS = "CURRENT_STATUS"
 
 # Fuzzy map: prefixo OCR → tipo normalizado
 _TIPO_PREFIXOS = {
@@ -46,13 +63,11 @@ _TIPO_PREFIXOS = {
     "WDRL": "WITHDRAWAL",
 }
 
-# Palavras-chave que identificam saque na descrição (campo mais longo = OCR mais preciso)
 _WITHDRAWAL_KEYWORDS = (
     "withdrawal", "withdraw", "wdl", "wth", ":wdr",
     "saqu", "retirad", "payout", "wire out",
 )
 
-# Palavras-chave que identificam depósito na descrição
 _DEPOSIT_KEYWORDS = (
     ":deposit", "deposit:", "praxispay", "wire in", "funding",
 )
@@ -67,7 +82,7 @@ class Operacao:
     valor_usd: float
 
 
-# ── PARSE PRINCIPAL ────────────────────────────────────────────────────────
+# ── PARSE PRINCIPAL ────────────────────────────────────────────────────────────
 
 def parse_pdf_avatrade(arquivo: BinaryIO) -> list[Operacao]:
     if not OCR_DISPONIVEL:
@@ -77,7 +92,7 @@ def parse_pdf_avatrade(arquivo: BinaryIO) -> list[Operacao]:
         )
 
     conteudo = arquivo.read()
-    operacoes: list[Operacao] = []
+    todos_grupos: list[list[dict]] = []
 
     with tempfile.TemporaryDirectory() as tmpdir:
         doc = fitz.open(stream=conteudo, filetype="pdf")
@@ -89,11 +104,16 @@ def parse_pdf_avatrade(arquivo: BinaryIO) -> list[Operacao]:
             path = os.path.join(tmpdir, f"pag_{num_pag:03d}.jpg")
             pix.save(path)
 
-            img = Image.open(path)
-            ops = _ocr_pagina(img)
-            operacoes.extend(ops)
+            img  = Image.open(path)
+            data = pytesseract.image_to_data(
+                img, lang="eng", output_type=pytesseract.Output.DICT
+            )
+            grupos = _agrupar_por_y(data, tolerancia=8)
+            todos_grupos.extend(grupos)
 
-    # remove duplicatas por adj_no
+    operacoes = _parse_com_secoes(todos_grupos)
+
+    # Remove duplicatas por adj_no
     vistos: set[str] = set()
     unicos: list[Operacao] = []
     for op in operacoes:
@@ -104,9 +124,213 @@ def parse_pdf_avatrade(arquivo: BinaryIO) -> list[Operacao]:
     return unicos
 
 
-# ── OCR DE UMA PÁGINA ─────────────────────────────────────────────────────
+# ── PARSING POR SEÇÃO ─────────────────────────────────────────────────────────
+
+def _parse_com_secoes(todos_grupos: list[list[dict]]) -> list[Operacao]:
+    """
+    Processa grupos OCR de todas as páginas com rastreamento de seção.
+
+    Cash Ledger  → extrai DEPOSIT e WITHDRAWAL (fluxos de caixa para declaração)
+    Purchase & Sales → extrai trades realizados via linhas TOTAL (Net P/S)
+
+    O estado da seção P&S é mantido entre páginas para suportar pares que
+    cruzam quebras de página.
+    """
+    operacoes: list[Operacao] = []
+    # AvaTrade sempre começa com o Cash Ledger; assume isso como default
+    secao_atual = _SEC_CASH
+
+    # Estado da seção P&S (preservado entre páginas)
+    ps_data_close:  datetime | None = None
+    ps_close_order: str | None      = None
+    ps_contador = 0
+
+    for grupo in todos_grupos:
+        # Detecta transição de seção
+        nova_secao = _detectar_secao(grupo)
+        if nova_secao is not None:
+            secao_atual = nova_secao
+            # Reseta estado P&S ao sair da seção
+            if nova_secao != _SEC_PS:
+                ps_data_close  = None
+                ps_close_order = None
+            continue
+
+        # ── CASH LEDGER: extrai apenas DEPOSIT / WITHDRAWAL ───────────────────
+        if secao_atual == _SEC_CASH:
+            op = _grupo_para_operacao(grupo)
+            if op and op.tipo in ("DEPOSIT", "WITHDRAWAL"):
+                operacoes.append(op)
+
+        # ── PURCHASE & SALES: extrai trades realizados ────────────────────────
+        elif secao_atual == _SEC_PS:
+
+            # Linha de fechamento → atualiza data e ordem de fechamento
+            if _e_linha_close_ps(grupo):
+                data  = _extrair_data_ps(grupo)
+                order = _extrair_order_ps(grupo)
+                if data:
+                    ps_data_close  = data
+                if order:
+                    ps_close_order = order
+
+            # Linha TOTAL → emite trade realizado com Net P/S
+            elif _e_linha_total_ps(grupo):
+                net_pnl = _extrair_net_pnl(grupo)
+                if ps_data_close is not None:
+                    ps_contador += 1
+                    adj_id = (
+                        f"PS{ps_close_order}"
+                        if ps_close_order
+                        else f"PS{ps_contador:08d}"
+                    )
+                    operacoes.append(Operacao(
+                        adj_no=adj_id,
+                        data=ps_data_close,
+                        tipo="CLOSED",
+                        descricao=f"Realizado #{ps_close_order or ps_contador}",
+                        valor_usd=net_pnl,
+                    ))
+                    ps_data_close  = None
+                    ps_close_order = None
+
+    return operacoes
+
+
+# ── DETECÇÃO DE SEÇÃO ─────────────────────────────────────────────────────────
+
+def _detectar_secao(grupo: list[dict]) -> str | None:
+    """
+    Retorna o nome da seção se o grupo for um cabeçalho de seção do extrato.
+    Usa matching substring (tolerante a OCR) para cada palavra-chave.
+    """
+    linha = " ".join(w["text"].upper() for w in grupo)
+
+    # "CASH LEDGER" — início da seção de fluxo de caixa
+    if "CASH" in linha and "LEDGER" in linha:
+        return _SEC_CASH
+
+    # "TRADE LEDGER" — começa aqui, paramos de parsear OPENED/CLOSED
+    if "TRADE" in linha and "LEDGER" in linha:
+        return _SEC_TRADE
+
+    # "PURCHASE AND SALES" (ou variações OCR)
+    if "PURCHASE" in linha and "SALES" in linha:
+        return _SEC_PS
+
+    # "CURRENT STATUS" ou "CURRENT OPEN POSITIONS"
+    if "CURRENT" in linha and ("STATUS" in linha or "POSITIONS" in linha):
+        return _SEC_STATUS
+
+    return None
+
+
+# ── HELPERS DA SEÇÃO PURCHASE & SALES ────────────────────────────────────────
+
+def _e_linha_close_ps(grupo: list[dict]) -> bool:
+    """
+    True se o grupo é uma linha de fechamento (CLOSE BUY / CLOSE SELL)
+    da seção Purchase & Sales.
+    A coluna Buy/Sell fica em x ≈ 450–700 na seção P&S.
+    Usa substring 'CLOS' para tolerar truncamentos OCR.
+    """
+    palavras_meio = [
+        w["text"].upper()
+        for w in grupo
+        if 350 <= w["x"] <= 800
+    ]
+    return any("CLOS" in p for p in palavras_meio)
+
+
+def _e_linha_total_ps(grupo: list[dict]) -> bool:
+    """
+    True se o grupo é uma linha TOTAL da seção Purchase & Sales.
+
+    Critérios:
+      - "TOTAL" aparece à esquerda (x < 250)
+      - Um dígito aparece à direita (x > 1400), na coluna Net P/S
+
+    O threshold x > 1400 distingue P&S TOTAL (Net P/S, coluna mais à direita)
+    do TOTAL do Trade Ledger (Total Cost, x ≈ 1230–1360).
+    """
+    texto_esq = " ".join(w["text"].upper() for w in grupo if w["x"] < 250)
+    if "TOTAL" not in texto_esq:
+        return False
+    return any(
+        w["x"] > 1400 and re.search(r'\d', w["text"])
+        for w in grupo
+    )
+
+
+def _extrair_data_ps(grupo: list[dict]) -> datetime | None:
+    """
+    Extrai a data de um leg de fechamento na seção P&S.
+
+    Na seção P&S, a coluna Order Date (GMT) fica em x ≈ 80–280, o que
+    sobrepõe com a coluna adj do Cash Ledger.  Coleta tokens nessa faixa,
+    descarta o número da ordem e tenta parsear a data.
+    Fallback: busca padrão de mês em qualquer posição da linha.
+    """
+    palavras = sorted(grupo, key=lambda w: w["x"])
+
+    # Tentativa principal: coluna Order Date (x ≈ 60–310)
+    texto = " ".join(w["text"] for w in palavras if 60 <= w["x"] <= 310)
+    texto = re.sub(r'^\d+\s*', '', texto).strip()
+    data = _parse_data(texto)
+    if data:
+        return data
+
+    # Fallback: busca padrão "Mês DD YYYY HH:MMAM/PM" em qualquer lugar da linha
+    linha = " ".join(w["text"] for w in palavras)
+    m = re.search(
+        r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)'
+        r'\s+\d{1,2}\s+\d{4}\s+\d{1,2}:\d{2}(?:AM|PM)',
+        linha,
+        re.IGNORECASE,
+    )
+    if m:
+        return _parse_data(m.group(0))
+
+    return None
+
+
+def _extrair_order_ps(grupo: list[dict]) -> str | None:
+    """Extrai o número da ordem (6–8 dígitos) da coluna Order da seção P&S."""
+    palavras = sorted(grupo, key=lambda w: w["x"])
+    for w in palavras:
+        if w["x"] < 130:
+            for bloco in re.findall(r'\d+', w["text"]):
+                if 6 <= len(bloco) <= 8:
+                    return bloco
+    return None
+
+
+def _extrair_net_pnl(grupo: list[dict]) -> float:
+    """
+    Extrai o valor Net P/S de uma linha TOTAL da seção P&S.
+
+    A coluna Net P/S é a última (x ≈ 1360–1540). Usa x > 1350 para
+    capturar também o sinal negativo "-" que pode aparecer logo antes dos dígitos.
+    """
+    palavras_dir = sorted(
+        [w for w in grupo if w["x"] > 1350],
+        key=lambda w: w["x"],
+    )
+    if palavras_dir:
+        val = _parse_valor(" ".join(w["text"] for w in palavras_dir))
+        if val != 0.0:
+            return val
+
+    # Fallback: 5 tokens mais à direita da linha inteira
+    todos = sorted(grupo, key=lambda w: -w["x"])
+    texto_fallback = " ".join(w["text"] for w in todos[:5])
+    return _parse_valor(texto_fallback)
+
+
+# ── OCR DE UMA PÁGINA (mantido para compatibilidade) ─────────────────────────
 
 def _ocr_pagina(img: "Image.Image") -> list[Operacao]:
+    """Mantido para compatibilidade — o novo fluxo usa _parse_com_secoes."""
     data = pytesseract.image_to_data(
         img, lang="eng", output_type=pytesseract.Output.DICT
     )
@@ -118,6 +342,8 @@ def _ocr_pagina(img: "Image.Image") -> list[Operacao]:
             operacoes.append(op)
     return operacoes
 
+
+# ── AGRUPAMENTO OCR ───────────────────────────────────────────────────────────
 
 def _agrupar_por_y(data: dict, tolerancia: int = 8) -> list[list[dict]]:
     palavras = []
@@ -145,6 +371,8 @@ def _agrupar_por_y(data: dict, tolerancia: int = 8) -> list[list[dict]]:
     return grupos
 
 
+# ── GRUPO → OPERAÇÃO (Cash Ledger) ────────────────────────────────────────────
+
 def _grupo_para_operacao(grupo: list[dict]) -> Operacao | None:
     cols: dict[str, list[str]] = defaultdict(list)
 
@@ -155,13 +383,17 @@ def _grupo_para_operacao(grupo: list[dict]) -> Operacao | None:
     adj_raw  = " ".join(cols.get("adj",  []))
     tipo_raw = " ".join(cols.get("tipo", [])).upper().strip()
 
-    # ── adj_no: extrai maior bloco numérico contínuo (tolerante a OCR) ─────
+    # ── adj_no: extrai maior bloco numérico contínuo (tolerante a OCR) ────────
     adj_blocos = re.findall(r'\d+', adj_raw)
     adj = max(adj_blocos, key=len) if adj_blocos else ""
-    if len(adj) < 5:          # precisa de pelo menos 5 dígitos
+
+    # Cash Ledger da AvaTrade usa adj_no de 8 dígitos começando com '2'
+    # (ex: 20832319, 21176843).  Trade Ledger usa números de ordem de 7 dígitos
+    # (ex: 4073299).  Filtrar aqui evita double-counting dessas seções.
+    if len(adj) != 8 or adj[0] != '2':
         return None
 
-    # ── tipo: fuzzy match por prefixo ──────────────────────────────────────
+    # ── tipo: fuzzy match por prefixo ─────────────────────────────────────────
     tipo = _normalizar_tipo(tipo_raw)
     if not tipo:
         return None
@@ -176,7 +408,7 @@ def _grupo_para_operacao(grupo: list[dict]) -> Operacao | None:
 
     valor = _parse_valor(amt_str)
 
-    # ── corrige tipo usando a descrição (campo mais longo → OCR mais preciso)
+    # ── corrige tipo usando a descrição ───────────────────────────────────────
     tipo, valor = _corrigir_tipo_e_valor(tipo, descricao, valor)
 
     return Operacao(
@@ -188,22 +420,21 @@ def _grupo_para_operacao(grupo: list[dict]) -> Operacao | None:
     )
 
 
+# ── NORMALIZAÇÃO DE TIPO ──────────────────────────────────────────────────────
+
 def _normalizar_tipo(tipo_raw: str) -> str | None:
     """Normaliza tipo OCR tolerando truncamentos e substituições de letras."""
     t = tipo_raw.upper().strip()
     if not t:
         return None
 
-    # Match exato
     if t in {"CLOSED", "OPENED", "DEPOSIT", "WITHDRAWAL"}:
         return t
 
-    # Match por prefixo (ex.: "CLOS", "DEPO", "WITH")
     for prefixo, tipo_real in _TIPO_PREFIXOS.items():
         if t.startswith(prefixo):
             return tipo_real
 
-    # Match com erros de OCR comuns (O→0, I→1, etc.)
     t_limpo = t.replace("0", "O").replace("1", "I").replace("5", "S")
     if t_limpo.startswith("CLOS"): return "CLOSED"
     if t_limpo.startswith("OPEN"): return "OPENED"
@@ -214,28 +445,22 @@ def _normalizar_tipo(tipo_raw: str) -> str | None:
 
 
 def _corrigir_tipo_e_valor(tipo: str, descricao: str, valor: float):
-    """
-    Usa a descrição para corrigir tipo incorreto.
-    A descrição é um campo maior → OCR mais preciso que o campo tipo (curto).
-    """
+    """Usa a descrição (campo longo → OCR mais preciso) para corrigir tipo."""
     desc_lower = descricao.lower()
 
-    # Saque: keyword na descrição, independente do tipo OCR
     if any(kw in desc_lower for kw in _WITHDRAWAL_KEYWORDS):
-        # Se OCR perdeu o sinal negativo, força negativo
-        valor_corrigido = -abs(valor)
-        return "WITHDRAWAL", valor_corrigido
+        return "WITHDRAWAL", -abs(valor)
 
-    # Se tipo é DEPOSIT mas valor é negativo → saque não identificado por keyword
     if tipo == "DEPOSIT" and valor < 0:
         return "WITHDRAWAL", valor
 
-    # Depósito: keyword na descrição confirma
     if any(kw in desc_lower for kw in _DEPOSIT_KEYWORDS) and tipo == "DEPOSIT":
-        return "DEPOSIT", abs(valor)   # garante positivo
+        return "DEPOSIT", abs(valor)
 
     return tipo, valor
 
+
+# ── CLASSIFICAÇÃO DE COLUNA ───────────────────────────────────────────────────
 
 def _classificar_coluna(x: int) -> str:
     if x < COL_ADJ_MAX:  return "adj"
@@ -246,17 +471,19 @@ def _classificar_coluna(x: int) -> str:
     return "balance"
 
 
-# ── HELPERS DE PARSING ────────────────────────────────────────────────────
+# ── HELPERS DE PARSING ────────────────────────────────────────────────────────
 
 def _parse_valor(texto: str) -> float:
     """
-    Converte 'US$ 1,234.56', 'USS 100.01', '-US$ 4.86' → float.
+    Converte 'US$ 1,234.56', 'USS 100.01', '-US$ 4.86', '- US$ 73,90' → float.
     O extrato da AvaTrade usa formato americano (ponto = decimal, vírgula = milhar).
     """
     if not texto:
         return 0.0
     t = texto.strip()
     negativo = t.startswith("-")
+    if negativo:
+        t = t[1:].strip()  # remove leading '-' antes do regex (pode haver espaço após)
     t = re.sub(r"-?\s*[Uu][Ss]?[Ss$]?\s*\$?\s*", "", t).strip()
     if not t:
         return 0.0
