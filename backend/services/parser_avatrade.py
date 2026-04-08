@@ -130,15 +130,22 @@ def _parse_com_secoes(todos_grupos: list[list[dict]]) -> list[Operacao]:
     """
     Processa grupos OCR de todas as páginas com rastreamento de seção.
 
-    Cash Ledger  → extrai DEPOSIT e WITHDRAWAL (fluxos de caixa para declaração)
-    Purchase & Sales → extrai trades realizados via linhas TOTAL (Net P/S)
+    Se o PDF contém seção Purchase & Sales (AvaOptions):
+      - Cash Ledger  → DEPOSIT e WITHDRAWAL
+      - Purchase & Sales → trades realizados via linhas TOTAL (Net P/S)
+
+    Se o PDF NÃO contém seção Purchase & Sales (MT4 / formato antigo):
+      - Cash Ledger  → CLOSED, OPENED, DEPOSIT e WITHDRAWAL (comportamento legado)
 
     O estado da seção P&S é mantido entre páginas para suportar pares que
     cruzam quebras de página.
     """
-    operacoes: list[Operacao] = []
-    # AvaTrade sempre começa com o Cash Ledger; assume isso como default
+    depositos_saques: list[Operacao] = []
+    cash_ledger_trades: list[Operacao] = []  # fallback para PDFs sem P&S
+    ps_operacoes: list[Operacao] = []
+
     secao_atual = _SEC_CASH
+    ps_secao_encontrada = False
 
     # Estado da seção P&S (preservado entre páginas)
     ps_data_close:  datetime | None = None
@@ -150,22 +157,27 @@ def _parse_com_secoes(todos_grupos: list[list[dict]]) -> list[Operacao]:
         nova_secao = _detectar_secao(grupo)
         if nova_secao is not None:
             secao_atual = nova_secao
-            # Reseta estado P&S ao sair da seção
-            if nova_secao != _SEC_PS:
+            if nova_secao == _SEC_PS:
+                ps_secao_encontrada = True
+            else:
                 ps_data_close  = None
                 ps_close_order = None
             continue
 
-        # ── CASH LEDGER: extrai apenas DEPOSIT / WITHDRAWAL ───────────────────
+        # ── CASH LEDGER ───────────────────────────────────────────────────────
         if secao_atual == _SEC_CASH:
             op = _grupo_para_operacao(grupo)
-            if op and op.tipo in ("DEPOSIT", "WITHDRAWAL"):
-                operacoes.append(op)
+            if not op:
+                continue
+            if op.tipo in ("DEPOSIT", "WITHDRAWAL"):
+                depositos_saques.append(op)
+            elif op.tipo in ("CLOSED", "OPENED"):
+                # Guardamos para usar como fallback se não houver seção P&S
+                cash_ledger_trades.append(op)
 
         # ── PURCHASE & SALES: extrai trades realizados ────────────────────────
         elif secao_atual == _SEC_PS:
 
-            # Linha de fechamento → atualiza data e ordem de fechamento
             if _e_linha_close_ps(grupo):
                 data  = _extrair_data_ps(grupo)
                 order = _extrair_order_ps(grupo)
@@ -174,7 +186,6 @@ def _parse_com_secoes(todos_grupos: list[list[dict]]) -> list[Operacao]:
                 if order:
                     ps_close_order = order
 
-            # Linha TOTAL → emite trade realizado com Net P/S
             elif _e_linha_total_ps(grupo):
                 net_pnl = _extrair_net_pnl(grupo)
                 if ps_data_close is not None:
@@ -184,7 +195,7 @@ def _parse_com_secoes(todos_grupos: list[list[dict]]) -> list[Operacao]:
                         if ps_close_order
                         else f"PS{ps_contador:08d}"
                     )
-                    operacoes.append(Operacao(
+                    ps_operacoes.append(Operacao(
                         adj_no=adj_id,
                         data=ps_data_close,
                         tipo="CLOSED",
@@ -194,7 +205,13 @@ def _parse_com_secoes(todos_grupos: list[list[dict]]) -> list[Operacao]:
                     ps_data_close  = None
                     ps_close_order = None
 
-    return operacoes
+    # Decide qual fonte de trades usar
+    if ps_secao_encontrada and ps_operacoes:
+        # AvaOptions com P&S: usa P&S (P&L realizado preciso) + depósitos/saques
+        return depositos_saques + ps_operacoes
+    else:
+        # MT4 / formato sem P&S: usa Cash Ledger completo (comportamento legado)
+        return depositos_saques + cash_ledger_trades
 
 
 # ── DETECÇÃO DE SEÇÃO ─────────────────────────────────────────────────────────
