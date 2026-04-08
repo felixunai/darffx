@@ -220,6 +220,17 @@ export default function Upload() {
         {progresso && !loading && !erro && (
           <div style={{ background:'rgba(0,229,160,0.1)', border:'1px solid var(--accent)', color:'var(--accent)', padding:'12px 16px', borderRadius:10, marginTop:16, fontSize:13 }}>
             {progresso}
+            {planLimit && (
+              <span>
+                {' '}ou{' '}
+                <button
+                  onClick={() => navigate('/')}
+                  style={{ background:'none', border:'none', color:'var(--accent)', fontWeight:600, cursor:'pointer', textDecoration:'underline', padding:0, fontSize:'inherit' }}
+                >
+                  verifique sua apuração no Dashboard
+                </button>.
+              </span>
+            )}
           </div>
         )}
 
