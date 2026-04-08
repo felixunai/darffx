@@ -279,16 +279,17 @@ def _e_linha_total_ps(grupo: list[dict]) -> bool:
 
     Critérios:
       - "TOTAL" aparece à esquerda (x < 250)
-      - Um dígito aparece à direita (x > 1400), na coluna Net P/S
+      - Um dígito aparece na metade direita da linha (x > 1100), na coluna Net P/S
 
-    O threshold x > 1400 distingue P&S TOTAL (Net P/S, coluna mais à direita)
-    do TOTAL do Trade Ledger (Total Cost, x ≈ 1230–1360).
+    Threshold reduzido de 1400 → 1100 para tolerar variações de layout entre PDFs.
+    Falsos positivos com Trade Ledger não ocorrem porque esta função só é chamada
+    quando secao_atual == _SEC_PS.
     """
     texto_esq = " ".join(w["text"].upper() for w in grupo if w["x"] < 250)
     if "TOTAL" not in texto_esq:
         return False
     return any(
-        w["x"] > 1400 and re.search(r'\d', w["text"])
+        w["x"] > 1100 and re.search(r'\d', w["text"])
         for w in grupo
     )
 
@@ -508,6 +509,7 @@ def _parse_valor(texto: str) -> float:
     """
     Converte 'US$ 1,234.56', 'USS 100.01', '-US$ 4.86', '- US$ 73,90' → float.
     O extrato da AvaTrade usa formato americano (ponto = decimal, vírgula = milhar).
+    Tolerante a caracteres de ruído OCR no fim do valor (ex: '199,79B').
     """
     if not texto:
         return 0.0
@@ -518,6 +520,12 @@ def _parse_valor(texto: str) -> float:
     t = re.sub(r"-?\s*[Uu][Ss]?[Ss$]?\s*\$?\s*", "", t).strip()
     if not t:
         return 0.0
+
+    # Extrai o primeiro bloco numérico válido (ignora ruído OCR após o número)
+    m = re.search(r'[\d,\.]+', t)
+    if not m:
+        return 0.0
+    t = m.group(0).rstrip(",.")
 
     if "," in t and "." in t:
         last_comma = t.rfind(",")
