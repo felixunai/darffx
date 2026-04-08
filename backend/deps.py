@@ -23,6 +23,10 @@ _MIGRATIONS = [
     "ALTER TABLE operacoes ADD COLUMN IF NOT EXISTS ptax_data FLOAT",
     "ALTER TABLE apuracoes_anuais ADD COLUMN IF NOT EXISTS desbloqueado BOOLEAN DEFAULT FALSE",
     "CREATE TABLE IF NOT EXISTS reset_tokens (token VARCHAR PRIMARY KEY, user_id VARCHAR REFERENCES users(id) ON DELETE CASCADE, expires_at TIMESTAMP NOT NULL, used BOOLEAN DEFAULT FALSE)",
+    # Fórmula explícita Lei 14.754/2023: ganhos − perdas − custos
+    "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS ganhos_usd FLOAT DEFAULT 0",
+    "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS perdas_usd FLOAT DEFAULT 0",
+    "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS custos_usd FLOAT DEFAULT 0",
 ]
 
 def init_db():
