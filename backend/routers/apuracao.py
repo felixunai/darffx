@@ -71,16 +71,27 @@ async def upload_extrato(
     )
     acumulado_brl = _calcular_carry_forward(apuracoes_existentes)
 
-    # Busca PTAX para todos os meses novos (com cache no banco)
-    meses_novos_keys = [
+    # Para plano free, limita a 2 meses totais
+    eh_free = (usuario.plano not in ("pago", "admin") and usuario.email != ADMIN_EMAIL)
+    count_existente = db.query(Apuracao).filter_by(user_id=usuario.id).count()
+    slots_free = max(0, 2 - count_existente) if eh_free else None
+
+    todos_novos = [
         (ano, mes) for (ano, mes) in sorted(por_mes.keys())
         if not db.query(Apuracao).filter_by(user_id=usuario.id, mes=mes, ano=ano).first()
     ]
+    meses_permitidos = set(todos_novos[:slots_free] if slots_free is not None else todos_novos)
+    meses_limitados  = len(todos_novos) > len(meses_permitidos)
+
+    meses_novos_keys = list(meses_permitidos)
     ptax_cache = await _buscar_ptax_com_cache(db, [(mes, ano) for ano, mes in meses_novos_keys])
 
     # Processa meses em ordem cronológica (sequencial para carry forward)
     meses_novos: dict = defaultdict(list)   # ano → [ResultadoMensal]
     for (ano, mes), ops in sorted(por_mes.items()):
+        if (ano, mes) not in meses_permitidos and (ano, mes) in set(todos_novos):
+            continue  # mês novo mas fora do limite free — pula
+
         existente = db.query(Apuracao).filter_by(
             user_id=usuario.id, mes=mes, ano=ano
         ).first()
@@ -156,6 +167,7 @@ async def upload_extrato(
     total_meses = sum(len(v) for v in meses_novos.values())
     return {
         "total": total_meses,
+        "meses_limitados": meses_limitados,
         "apuracoes_anuais": [_anual_to_dict(a, usuario) for a in anuais],
     }
 
@@ -471,7 +483,7 @@ def _verificar_plano(usuario, db: Session):
     Planos:
     - admin: sem restrição
     - pago: sem restrição até 31/12 do ano vigente
-    - free: 1 PDF (1 ApuracaoAnual) — resultado fica bloqueado até pagar
+    - free: até 2 meses de análise — resultado fica bloqueado até pagar
     """
     if usuario.email == ADMIN_EMAIL or usuario.plano == "admin":
         return
@@ -479,13 +491,13 @@ def _verificar_plano(usuario, db: Session):
         if usuario.plano_expiracao and usuario.plano_expiracao < datetime.utcnow():
             raise HTTPException(402, "Seu acesso expirou em 31/12. Renove para continuar.")
         return
-    # free: permite 1 upload (1 ApuracaoAnual). O resultado fica como teaser.
-    count = db.query(ApuracaoAnual).filter_by(user_id=usuario.id).count()
-    if count >= 1:
+    # free: permite até 2 meses (Apuracao records)
+    count = db.query(Apuracao).filter_by(user_id=usuario.id).count()
+    if count >= 2:
         raise HTTPException(
             402,
-            "PLAN_LIMIT: Plano gratuito permite 1 apuração. "
-            "Desbloqueie o Relatório Completo por R$ 69,90."
+            "PLAN_LIMIT: Plano gratuito permite 2 meses de análise. "
+            "Desbloqueie o Acesso Completo para processar mais meses."
         )
 
 

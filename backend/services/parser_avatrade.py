@@ -27,6 +27,7 @@ Seções ignoradas (evita double-counting):
 import re
 import tempfile
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import BinaryIO
 from dataclasses import dataclass
@@ -82,6 +83,15 @@ class Operacao:
     valor_usd: float
 
 
+# ── OCR WORKER (executa em thread paralela) ───────────────────────────────────
+
+def _ocr_arquivo(path: str) -> list[list[dict]]:
+    """Faz OCR de um arquivo de imagem e retorna grupos por linha Y."""
+    img  = Image.open(path)
+    data = pytesseract.image_to_data(img, lang="eng", output_type=pytesseract.Output.DICT)
+    return _agrupar_por_y(data, tolerancia=8)
+
+
 # ── PARSE PRINCIPAL ────────────────────────────────────────────────────────────
 
 def parse_pdf_avatrade(arquivo: BinaryIO) -> list[Operacao]:
@@ -97,18 +107,22 @@ def parse_pdf_avatrade(arquivo: BinaryIO) -> list[Operacao]:
     with tempfile.TemporaryDirectory() as tmpdir:
         doc = fitz.open(stream=conteudo, filetype="pdf")
 
+        # Passo 1: renderiza todas as páginas para JPEG (rápido, sequencial)
+        page_paths: list[str] = []
         for num_pag in range(len(doc)):
             pagina = doc[num_pag]
             mat  = fitz.Matrix(200/72, 200/72)
             pix  = pagina.get_pixmap(matrix=mat)
             path = os.path.join(tmpdir, f"pag_{num_pag:03d}.jpg")
             pix.save(path)
+            page_paths.append(path)
 
-            img  = Image.open(path)
-            data = pytesseract.image_to_data(
-                img, lang="eng", output_type=pytesseract.Output.DICT
-            )
-            grupos = _agrupar_por_y(data, tolerancia=8)
+        # Passo 2: OCR em paralelo (pytesseract usa subprocess → libera GIL)
+        workers = min(4, len(page_paths))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            resultados = list(executor.map(_ocr_arquivo, page_paths))
+
+        for grupos in resultados:
             todos_grupos.extend(grupos)
 
     operacoes = _parse_com_secoes(todos_grupos)

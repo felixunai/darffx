@@ -61,8 +61,13 @@ export default function Upload() {
       const { data } = await api.post('/apuracao/upload', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
-      setProgresso(`✅ ${data.total} mês(es) processado(s)! Redirecionando...`)
-      setTimeout(() => navigate('/'), 1500)
+      if (data.meses_limitados) {
+        setProgresso(`✅ ${data.total} mês(es) processado(s). Plano gratuito: máximo 2 meses — desbloqueie para ver todos.`)
+        setPlanLimit(true)
+      } else {
+        setProgresso(`✅ ${data.total} mês(es) processado(s)! Redirecionando...`)
+        setTimeout(() => navigate('/'), 1500)
+      }
     } catch (err) {
       const detail = err.response?.data?.detail || ''
       if (detail.startsWith('PLAN_LIMIT')) {
@@ -174,12 +179,15 @@ export default function Upload() {
               <div style={{ flex:1, height:4, background:'var(--surface2)', borderRadius:4, marginRight:12, overflow:'hidden' }}>
                 <div style={{
                   height:'100%', borderRadius:4, background:'var(--accent)',
-                  width: `${Math.min(95, (elapsed / 90) * 100)}%`,
+                  width: `${Math.min(95, (elapsed / 180) * 100)}%`,
                   transition:'width 1s linear',
                 }} />
               </div>
               <span style={{ fontSize:11, color:'var(--muted)', whiteSpace:'nowrap' }}>
-                {elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed/60)}m${elapsed%60}s`} · ~30-60s
+                {elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed/60)}m${elapsed%60}s`}
+                {' · '}{arquivo
+                  ? arquivo.size > 3_000_000 ? '~3-4 min' : arquivo.size > 1_500_000 ? '~2-3 min' : '~1-2 min'
+                  : '~2-3 min'}
               </span>
             </div>
           </div>
