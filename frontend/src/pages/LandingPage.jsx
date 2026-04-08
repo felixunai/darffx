@@ -166,7 +166,7 @@ export default function LandingPage() {
               num: '03',
               icon: '📊',
               titulo: 'Relatório pronto para o IRPF',
-              desc: 'Receba o breakdown mensal, imposto anual, vencimento da DARF e o relatório completo pronto para declarar.',
+              desc: 'Receba o breakdown mensal, imposto anual (IRPF) e o relatório completo pronto para declarar.',
             },
           ].map((s) => (
             <div key={s.num} style={{

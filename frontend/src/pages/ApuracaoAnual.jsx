@@ -104,13 +104,13 @@ export default function ApuracaoAnual() {
             )}
             {desbloqueado && !dados.darf_pago && r2(dados.imposto_brl) > 0 && (
               <button className="btn btn-ghost" onClick={marcarPago} disabled={pagando}>
-                {pagando ? <span className="spinner" style={{width:14,height:14}} /> : '✓ Marcar IRPF como pago'}
+                {pagando ? <span className="spinner" style={{width:14,height:14}} /> : '✓ Marcar imposto como pago'}
               </button>
             )}
             {desbloqueado && dados.darf_pago && (
               <button className="btn btn-ghost" onClick={desfazerPago} disabled={pagando}
                 style={{ color:'var(--muted)', fontSize:13 }}>
-                {pagando ? <span className="spinner" style={{width:14,height:14}} /> : '↩ Desfazer — voltar para Pendente'}
+                {pagando ? <span className="spinner" style={{width:14,height:14}} /> : '↩ Desfazer — voltar para A pagar'}
               </button>
             )}
           </div>
@@ -246,12 +246,12 @@ export default function ApuracaoAnual() {
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:16 }}>
               <div>
                 <div style={{ fontFamily:'Syne', fontWeight:800, fontSize:17, marginBottom:8 }}>
-                  IRPF — Aplicações Financeiras no Exterior
+                  Imposto anual (IRPF) — Aplicações Financeiras no Exterior
                 </div>
                 <div style={{ fontSize:13, color:'var(--muted)', lineHeight:1.8 }}>
                   <div>• Alíquota: <strong style={{color:'var(--text)'}}>15% fixo</strong> (Lei 14.754/2023)</div>
                   <div>• Declarar como: <strong style={{color:'var(--text)'}}>Aplicações financeiras no exterior</strong></div>
-                  <div>• Vencimento: <strong style={{color:'var(--text)'}}>{fmtVenc(dados.vencimento_darf)}</strong></div>
+                  <div>• Prazo de entrega: <strong style={{color:'var(--text)'}}>{fmtVenc(dados.vencimento_darf)}</strong></div>
                   <div>• Depósitos: <strong style={{color:'var(--text)'}}>{fmtUSD(dados.depositos_usd)}</strong></div>
                   <div>• Saques: <strong style={{color:'var(--text)'}}>{fmtUSD(dados.saques_usd)}</strong></div>
                 </div>
@@ -262,7 +262,7 @@ export default function ApuracaoAnual() {
                 </div>
                 {dados.darf_pago
                   ? <span className="badge badge-blue">✓ Pago</span>
-                  : <span className="badge badge-yellow">Pendente</span>
+                  : <span className="badge badge-yellow">A pagar</span>
                 }
               </div>
             </div>

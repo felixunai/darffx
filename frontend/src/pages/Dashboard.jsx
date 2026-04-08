@@ -84,7 +84,7 @@ export default function Dashboard() {
   const totalLucro     = r2(anuais.reduce((s, a) => s + r2(a.lucro_brl),    0))
   const totalDepositos = r2(anuais.reduce((s, a) => s + r2(a.depositos_usd),0))
   const totalSaques    = r2(anuais.reduce((s, a) => s + r2(a.saques_usd),   0))
-  const pendentes         = desbloqueados.filter(a => r2(a.imposto_brl) > 0 && !a.darf_pago).length
+  const impostoPendente   = r2(desbloqueados.filter(a => r2(a.imposto_brl) > 0 && !a.darf_pago).reduce((s, a) => s + r2(a.imposto_brl), 0))
   const anoSelDesbloqueado = anuais.find(a => a.ano === anoSel)?.desbloqueado ?? false
 
   // Gráfico anual (visão geral)
@@ -132,8 +132,8 @@ export default function Dashboard() {
             <CardStat label="Lucro total (BRL)" valor={fmtBRL(totalLucro)}
               cor={totalLucro >= 0 ? 'var(--accent)' : 'var(--danger)'} />
             <CardStat label="Imposto total" valor={desbloqueados.length > 0 ? fmtBRL(totalImposto) : '🔒 Bloqueado'} cor="var(--warn)" />
-            <CardStat label="DARFs pendentes" valor={desbloqueados.length > 0 ? pendentes : '—'}
-              cor={pendentes > 0 ? 'var(--danger)' : undefined} />
+            <CardStat label="Imposto anual a pagar" valor={desbloqueados.length > 0 ? fmtBRL(impostoPendente) : '—'}
+              cor={impostoPendente > 0 ? 'var(--danger)' : undefined} />
           </div>
 
           {/* GRÁFICOS */}
@@ -231,7 +231,7 @@ export default function Dashboard() {
                   <th>Base IR</th>
                   <th>Alíquota</th>
                   <th>Imposto</th>
-                  <th>Venc. DARF</th>
+                  <th>Prazo IRPF</th>
                   <th>Status</th>
                   <th></th>
                 </tr>
@@ -270,7 +270,7 @@ export default function Dashboard() {
                             ? <span className="badge badge-green">Isento</span>
                             : a.darf_pago
                               ? <span className="badge badge-blue">Pago</span>
-                              : <span className="badge badge-red">Pendente</span>
+                              : <span className="badge badge-red">A pagar</span>
                           }
                         </td>
                       </>
