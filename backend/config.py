@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 dias
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_PRODUCT_IMAGE_URL: str = ""  # URL pública da imagem do produto (JPEG/PNG)
     RESEND_API_KEY: str = ""
     RESEND_FROM_EMAIL: str = "DarfFX <noreply@darffx.com.br>"
     FRONTEND_URL: str = "http://localhost:5173"

@@ -84,21 +84,39 @@ async def checkout(
     if is_promo:
         nome_produto += " 🏷 Oferta Especial"
 
+    product_data = {
+        "name": nome_produto,
+        "description": (
+            f"✓ Cálculo automático Lei 14.754/2023  ·  "
+            f"✓ PTAX automático (Banco Central)  ·  "
+            f"✓ Exportação para declaração IRPF  ·  "
+            f"✓ Meses ilimitados  ·  "
+            f"✓ Válido até 31/12/{ano_atual}"
+        ),
+    }
+    if settings.STRIPE_PRODUCT_IMAGE_URL:
+        product_data["images"] = [settings.STRIPE_PRODUCT_IMAGE_URL]
+
     session = stripe.checkout.Session.create(
-        payment_method_types=["card"],
+        payment_method_types=["card", "pix"],
         line_items=[{
             "price_data": {
                 "currency": "brl",
-                "product_data": {
-                    "name": nome_produto,
-                    "description": f"Cálculo IR Forex · PTAX automático · Relatório IRPF · Válido até 31/12/{ano_atual}",
-                },
+                "product_data": product_data,
                 "unit_amount": preco,
             },
             "quantity": 1,
         }],
         mode="payment",
         customer_email=usuario.email,
+        custom_text={
+            "submit": {
+                "message": "Pagamento único e seguro via Stripe. Acesso liberado imediatamente após confirmação.",
+            },
+            "after_submit": {
+                "message": "Você receberá um email de confirmação assim que o pagamento for processado.",
+            },
+        },
         success_url=f"{settings.FRONTEND_URL}/apuracao/anual/{ano_atual}?desbloqueado=1",
         cancel_url=f"{settings.FRONTEND_URL}/upgrade?cancelado=1",
         metadata={
