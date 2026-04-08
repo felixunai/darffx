@@ -59,7 +59,11 @@ class Apuracao(Base):
     apuracao_anual_id = Column(String, ForeignKey("apuracoes_anuais.id"), nullable=True)
     mes              = Column(Integer, nullable=False)
     ano              = Column(Integer, nullable=False)
-    ganho_usd        = Column(Float, default=0.0)
+    # Componentes da fórmula (Lei 14.754/2023)
+    ganhos_usd       = Column(Float, default=0.0)   # Σ operações positivas
+    perdas_usd       = Column(Float, default=0.0)   # Σ operações negativas (absoluto)
+    custos_usd       = Column(Float, default=0.0)   # Taxas/corretagem
+    ganho_usd        = Column(Float, default=0.0)   # ganhos − perdas − custos
     ptax             = Column(Float, nullable=True)
     ganho_brl        = Column(Float, default=0.0)
     carry_fwd_brl    = Column(Float, default=0.0)

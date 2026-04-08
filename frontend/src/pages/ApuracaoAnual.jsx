@@ -275,16 +275,24 @@ export default function ApuracaoAnual() {
             <h3 style={{ fontSize:15, marginBottom:20 }}>Breakdown mensal — {ano}</h3>
             {desbloqueado ? (
               <div style={{ overflowX:'auto' }}>
+                {/* Legenda da fórmula */}
+                <div style={{ fontSize:11, color:'var(--muted)', marginBottom:12, padding:'8px 12px',
+                  background:'var(--surface2)', borderRadius:8, display:'inline-flex', gap:16, flexWrap:'wrap' }}>
+                  <span><span style={{color:'var(--accent)'}}>▲ Ganhos</span> − <span style={{color:'var(--danger)'}}>▼ Perdas</span> − Custos = <strong style={{color:'var(--text)'}}>Lucro Líquido</strong></span>
+                  <span>× PTAX = <strong style={{color:'var(--text)'}}>Lucro (BRL)</strong></span>
+                  <span>× 15% = <strong style={{color:'var(--warn)'}}>Imposto anual (IRPF)</strong></span>
+                </div>
+
                 <table className="tabela">
                   <thead>
                     <tr>
                       <th>Mês</th>
-                      <th>Resultado (USD)</th>
-                      <th>Resultado (BRL)</th>
+                      <th style={{color:'var(--accent)'}}>Ganhos</th>
+                      <th style={{color:'var(--danger)'}}>Perdas</th>
+                      <th>Líquido (USD)</th>
+                      <th>Líquido (BRL)</th>
                       <th>PTAX</th>
-                      <th>Depósitos</th>
-                      <th>Saques</th>
-                      <th>Operações</th>
+                      <th>Ops</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -292,7 +300,13 @@ export default function ApuracaoAnual() {
                     {dados.meses.map(m => (
                       <tr key={m.mes}>
                         <td style={{ fontWeight:600 }}>{MESES_CURTO[m.mes-1]}</td>
-                        <td style={{ color: r2(m.ganho_usd) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
+                        <td style={{ color:'var(--accent)', fontSize:13 }}>
+                          {r2(m.ganhos_usd) > 0 ? `+${fmtUSD(m.ganhos_usd)}` : '—'}
+                        </td>
+                        <td style={{ color:'var(--danger)', fontSize:13 }}>
+                          {r2(m.perdas_usd) > 0 ? `-${fmtUSD(m.perdas_usd)}` : '—'}
+                        </td>
+                        <td style={{ fontWeight:600, color: r2(m.ganho_usd) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
                           {r2(m.ganho_usd) >= 0 ? '+' : ''}{fmtUSD(m.ganho_usd)}
                         </td>
                         <td style={{ color: r2(m.ganho_brl) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
@@ -300,12 +314,6 @@ export default function ApuracaoAnual() {
                         </td>
                         <td style={{ color:'var(--muted)', fontSize:12 }}>
                           {m.ptax ? `R$ ${r2(m.ptax).toFixed(4)}` : '—'}
-                        </td>
-                        <td style={{ fontSize:12, color:'var(--muted)' }}>
-                          {r2(m.depositos_usd) > 0 ? fmtUSD(m.depositos_usd) : '—'}
-                        </td>
-                        <td style={{ fontSize:12, color: r2(m.saques_usd) > 0 ? 'var(--danger)' : 'var(--muted)' }}>
-                          {r2(m.saques_usd) > 0 ? `-${fmtUSD(m.saques_usd)}` : '—'}
                         </td>
                         <td style={{ fontSize:12, color:'var(--muted)', textAlign:'center' }}>
                           {m.operacoes_count || 0}
@@ -322,12 +330,17 @@ export default function ApuracaoAnual() {
                   <tfoot>
                     <tr style={{ fontWeight:700, borderTop:'2px solid var(--border)', background:'var(--surface2)' }}>
                       <td>TOTAL</td>
+                      <td style={{ color:'var(--accent)', fontSize:13 }}>
+                        {r2(dados.meses?.reduce((s,m) => s + r2(m.ganhos_usd), 0)) > 0
+                          ? `+${fmtUSD(dados.meses?.reduce((s,m) => s + r2(m.ganhos_usd), 0))}` : '—'}
+                      </td>
+                      <td style={{ color:'var(--danger)', fontSize:13 }}>
+                        {r2(dados.meses?.reduce((s,m) => s + r2(m.perdas_usd), 0)) > 0
+                          ? `-${fmtUSD(dados.meses?.reduce((s,m) => s + r2(m.perdas_usd), 0))}` : '—'}
+                      </td>
                       <td style={{ color: r2(dados.lucro_usd) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>{fmtUSD(dados.lucro_usd)}</td>
                       <td style={{ color: r2(dados.lucro_brl) >= 0 ? 'var(--accent)' : 'var(--danger)' }}>{fmtBRL(dados.lucro_brl)}</td>
-                      <td>—</td>
-                      <td style={{ fontSize:12 }}>{r2(dados.depositos_usd) > 0 ? fmtUSD(dados.depositos_usd) : '—'}</td>
-                      <td style={{ fontSize:12 }}>{r2(dados.saques_usd) > 0 ? `-${fmtUSD(dados.saques_usd)}` : '—'}</td>
-                      <td></td><td></td>
+                      <td>—</td><td></td><td></td>
                     </tr>
                   </tfoot>
                 </table>

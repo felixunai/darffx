@@ -1,11 +1,17 @@
 """
 Serviço de cálculo de IR para Forex — Lei 14.754/2023 (vigente desde jan/2024).
 
+Fórmula mensal (base para apuração anual):
+  Lucro Líquido = Σ(ganhos) − Σ(perdas) − custos operacionais
+  * AvaTrade não cobra taxas separadas — custo já embutido nos prêmios.
+
 Regras:
 - Apuração ANUAL (não mensal)
-- Alíquota FIXA de 15% sobre o lucro líquido anual
+- Alíquota FIXA de 15% sobre o lucro líquido anual (Art. 2º Lei 14.754/2023)
+  (Alíquotas progressivas se aplicam somente a offshores/controladas — não
+   a contas diretas de corretora como AvaTrade)
 - Sem isenção de R$ 20.000
-- Compensação de prejuízos de anos anteriores
+- Compensação de prejuízos de meses anteriores dentro do mesmo ano-calendário
 - PTAX: cotação de venda do dólar do último dia útil do mês de cada operação
 - Declaração como "Aplicações financeiras no exterior"
 - Vencimento: último dia útil de maio do ano seguinte (prazo IRPF)
@@ -26,10 +32,18 @@ ALIQUOTA_FIXA = 0.15  # 15% flat — Lei 14.754/2023
 
 @dataclass
 class ResultadoMensal:
-    """Breakdown mensal para referência (não gera DARF próprio)."""
+    """Breakdown mensal para referência (não gera tributo próprio).
+
+    Fórmula:
+      ganho_usd = ganhos_usd − perdas_usd − custos_usd
+    """
     mes: int
     ano: int
-    ganho_usd: float
+    # Componentes da fórmula
+    ganhos_usd: float          # Σ operações positivas (realizadas)
+    perdas_usd: float          # Σ operações negativas em valor absoluto
+    custos_usd: float          # Taxas/corretagem (0 para AvaTrade)
+    ganho_usd: float           # Resultado líquido = ganhos − perdas − custos
     ptax: float
     ganho_brl: float
     carry_fwd_brl: float
@@ -143,17 +157,30 @@ def calcular_ir_mensal(
     mes: int,
     ano: int,
     carry_fwd_brl: float = 0.0,
+    custos_usd: float = 0.0,
 ) -> ResultadoMensal:
     """
     Breakdown mensal para exibição de detalhe.
-    O imposto NÃO é mensal — é apenas uma referência proporcional.
-    A tributação real é feita no ResultadoAnual.
+
+    Fórmula (Lei 14.754/2023):
+      ganho_usd = Σ(ganhos) − Σ(perdas) − custos_usd
+      base_brl  = max(0, ganho_brl − prejuízo_acumulado_no_ano)
+      imposto   = base_brl × 15%   → lançado no ajuste anual do IRPF
+
+    O imposto aqui é referência proporcional — a tributação real é anual.
     """
     ops_mes = [
         op for op in operacoes
         if op.data.month == mes and op.data.year == ano
         and op.tipo in ("CLOSED", "OPENED")
     ]
+
+    # Componentes da fórmula: separa ganhos e perdas
+    ganhos_usd = round(sum(op.valor_usd for op in ops_mes if op.valor_usd > 0), 2)
+    perdas_usd = round(sum(abs(op.valor_usd) for op in ops_mes if op.valor_usd < 0), 2)
+    custos_usd = round(max(0.0, custos_usd), 2)
+    ganho_usd  = round(ganhos_usd - perdas_usd - custos_usd, 2)
+
     depositos_usd = round(sum(
         op.valor_usd for op in operacoes
         if op.data.month == mes and op.data.year == ano
@@ -164,14 +191,14 @@ def calcular_ir_mensal(
         if op.data.month == mes and op.data.year == ano
         and (
             op.tipo == "WITHDRAWAL"
-            or (op.tipo == "DEPOSIT" and op.valor_usd < 0)  # DEPOSIT negativo = saque não classificado
+            or (op.tipo == "DEPOSIT" and op.valor_usd < 0)
         )
     ), 2)
 
-    ganho_usd = round(sum(op.valor_usd for op in ops_mes), 2)
     tem_day_trade = _detectar_day_trade(ops_mes)
     ganho_brl = round(ganho_usd * ptax, 2)
 
+    # Compensação de prejuízo acumulado no ano (meses anteriores do mesmo ano)
     if ganho_brl > 0 and carry_fwd_brl > 0:
         base = round(max(0.0, ganho_brl - carry_fwd_brl), 2)
     elif ganho_brl > 0:
@@ -181,7 +208,12 @@ def calcular_ir_mensal(
 
     return ResultadoMensal(
         mes=mes, ano=ano,
-        ganho_usd=ganho_usd, ptax=ptax, ganho_brl=ganho_brl,
+        ganhos_usd=ganhos_usd,
+        perdas_usd=perdas_usd,
+        custos_usd=custos_usd,
+        ganho_usd=ganho_usd,
+        ptax=ptax,
+        ganho_brl=ganho_brl,
         carry_fwd_brl=round(carry_fwd_brl, 2),
         base_tributavel_brl=base,
         aliquota=ALIQUOTA_FIXA,
