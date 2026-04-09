@@ -164,7 +164,9 @@ def _parse_com_secoes(todos_grupos: list[list[dict]]) -> list[Operacao]:
     # Estado da seção P&S (preservado entre páginas)
     ps_data_close:  datetime | None = None
     ps_close_order: str | None      = None
-    ps_contador = 0
+    ps_contador      = 0
+    ps_total_parcial = False   # True quando TOTAL splitado aguarda valor na prox. linha
+    ps_sinal_total   = 1       # sinal do TOTAL splitado: +1 ou -1
 
     for grupo in todos_grupos:
         # Detecta transição de seção
@@ -192,7 +194,6 @@ def _parse_com_secoes(todos_grupos: list[list[dict]]) -> list[Operacao]:
         # ── PURCHASE & SALES: extrai trades realizados ────────────────────────
         elif secao_atual == _SEC_PS:
             linha_txt = " ".join(w["text"] for w in sorted(grupo, key=lambda w: w["x"]))
-            linha_up  = linha_txt.upper()
             print(f"[PS] {linha_txt[:120]}", flush=True)
 
             if _e_linha_close_ps(grupo):
@@ -203,26 +204,37 @@ def _parse_com_secoes(todos_grupos: list[list[dict]]) -> list[Operacao]:
                     ps_data_close  = data
                 if order:
                     ps_close_order = order
+                ps_sinal_total   = 1   # reset sinal ao ver nova CLOSE line
+                ps_total_parcial = False
 
             elif _e_linha_total_ps(grupo):
                 net_pnl = _extrair_net_pnl(grupo)
-                print(f"[PS-TOTAL] pnl={net_pnl} date={ps_data_close} order={ps_close_order}", flush=True)
-                if ps_data_close is not None:
-                    ps_contador += 1
-                    adj_id = (
-                        f"PS{ps_close_order}"
-                        if ps_close_order
-                        else f"PS{ps_contador:08d}"
-                    )
-                    ps_operacoes.append(Operacao(
-                        adj_no=adj_id,
-                        data=ps_data_close,
-                        tipo="CLOSED",
-                        descricao=f"Realizado #{ps_close_order or ps_contador}",
-                        valor_usd=net_pnl,
-                    ))
+                # Verifica sinal na linha ("TOTAL -US$" sem dígito)
+                if net_pnl == 0.0:
+                    linha_up = linha_txt.upper()
+                    ps_sinal_total   = -1 if "-" in linha_up else 1
+                    ps_total_parcial = True   # valor vem na próxima linha OCR
+                    print(f"[PS-TOTAL-SPLIT] aguardando valor...", flush=True)
+                else:
+                    ps_total_parcial = False
+                    _registrar_ps(ps_data_close, ps_close_order, net_pnl,
+                                  ps_contador, ps_operacoes)
+                    ps_contador   += 1
                     ps_data_close  = None
                     ps_close_order = None
+
+            elif ps_total_parcial:
+                # Linha de continuação de um TOTAL splitado ("73,90")
+                v = _parse_valor(linha_txt)
+                if v != 0.0:
+                    net_pnl = ps_sinal_total * abs(v)
+                    print(f"[PS-TOTAL-CONT] pnl={net_pnl} date={ps_data_close} order={ps_close_order}", flush=True)
+                    _registrar_ps(ps_data_close, ps_close_order, net_pnl,
+                                  ps_contador, ps_operacoes)
+                    ps_contador      += 1
+                    ps_data_close     = None
+                    ps_close_order    = None
+                ps_total_parcial = False
 
     # Decide qual fonte de trades usar
     if ps_secao_encontrada and ps_operacoes:
@@ -265,51 +277,71 @@ def _detectar_secao(grupo: list[dict]) -> str | None:
 
 def _e_linha_close_ps(grupo: list[dict]) -> bool:
     """
-    True se o grupo é uma linha de fechamento (CLOSE BUY / CLOSE SELL) na seção P&S.
-    Não usa posição X — procura 'CLOS' em qualquer parte da linha.
-    Exige também um padrão de data para distinguir de linhas de cabeçalho.
+    True se o grupo é uma linha de fechamento na seção P&S.
+    Só verifica 'CLOS' em qualquer posição — sem dependência de x ou data,
+    pois cabeçalhos nunca contêm 'CLOS'.
     """
     linha = " ".join(w["text"].upper() for w in grupo)
-    if "CLOS" not in linha:
-        return False
-    # Deve ter data (mês + ano) — evita falsos positivos em cabeçalhos
-    return bool(re.search(
-        r'(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+\d{1,2}\s+20\d\d',
-        linha, re.IGNORECASE
-    ))
+    return "CLOS" in linha
 
 
 def _e_linha_total_ps(grupo: list[dict]) -> bool:
     """
-    True se o grupo é uma linha TOTAL da seção Purchase & Sales.
-    Usa a posição relativa: 'Total' deve ser a primeira ou segunda palavra da linha
-    (menor x), e a linha deve conter pelo menos um dígito.
-    Não depende de threshold absoluto de x.
+    True se o grupo é uma linha TOTAL da seção P&S (com ou sem valor).
+    'Total' deve ser a primeira ou segunda palavra da linha (menor x).
+    Inclui TOTAL splitadas como 'TOTAL -US$' (sem dígito) para capturar
+    linhas cujo valor numérico ficou na próxima linha OCR.
     """
     if not grupo:
         return False
     palavras_ord = sorted(grupo, key=lambda w: w["x"])
     primeiras = " ".join(w["text"].upper() for w in palavras_ord[:2])
-    if "TOTAL" not in primeiras:
-        return False
-    linha = " ".join(w["text"] for w in grupo)
-    return bool(re.search(r'\d', linha))
+    return "TOTAL" in primeiras
+
+
+def _registrar_ps(ps_data_close, ps_close_order, net_pnl, ps_contador, ps_operacoes):
+    """Cria e adiciona uma Operacao de P&S se a data de fechamento for conhecida."""
+    print(f"[PS-TOTAL] pnl={net_pnl} date={ps_data_close} order={ps_close_order}", flush=True)
+    if ps_data_close is None:
+        return
+    adj_id = f"PS{ps_close_order}" if ps_close_order else f"PS{ps_contador + 1:08d}"
+    ps_operacoes.append(Operacao(
+        adj_no=adj_id,
+        data=ps_data_close,
+        tipo="CLOSED",
+        descricao=f"Realizado #{ps_close_order or ps_contador + 1}",
+        valor_usd=net_pnl,
+    ))
 
 
 def _extrair_data_ps(grupo: list[dict]) -> datetime | None:
     """
     Extrai a data de fechamento de uma linha CLOSE na seção P&S.
-    Procura o padrão 'Mês DD YYYY HH:MM AM/PM' em qualquer posição.
-    Retorna a PRIMEIRA ocorrência (Order Date), não a Exp. Date.
+    Tenta com timestamp completo; se a hora estiver na próxima linha OCR,
+    aceita apenas a data (Mês DD YYYY) e usa 00:00 como hora.
     """
     linha = " ".join(w["text"] for w in sorted(grupo, key=lambda w: w["x"]))
+    # Padrão completo: "Jan 15 2026 9:50PM"
     m = re.search(
         r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)'
         r'\s+\d{1,2}\s+\d{4}\s+\d{1,2}:\d{2}(?:AM|PM)',
-        linha,
-        re.IGNORECASE,
+        linha, re.IGNORECASE,
     )
-    return _parse_data(m.group(0)) if m else None
+    if m:
+        return _parse_data(m.group(0))
+    # Fallback: apenas data (hora na próxima linha OCR)
+    m = re.search(
+        r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)'
+        r'\s+(\d{1,2})\s+(20\d\d)',
+        linha, re.IGNORECASE,
+    )
+    if m:
+        try:
+            mes = datetime.strptime(m.group(1)[:3].capitalize(), '%b').month
+            return datetime(int(m.group(3)), mes, int(m.group(2)))
+        except Exception:
+            pass
+    return None
 
 
 def _extrair_order_ps(grupo: list[dict]) -> str | None:
@@ -424,8 +456,19 @@ def _grupo_para_operacao(grupo: list[dict]) -> Operacao | None:
     # ── corrige tipo usando a descrição ───────────────────────────────────────
     tipo, valor = _corrigir_tipo_e_valor(tipo, descricao, valor)
 
+    # Fallback para depósitos/saques com valor zero: o OCR colocou o valor na
+    # coluna balance (x > COL_AMT_MAX). Percorre a linha ordenada por x e pega
+    # o primeiro padrão "US$ xxx" encontrado (que é o valor da transação).
     if tipo in ("DEPOSIT", "WITHDRAWAL") and valor == 0.0:
-        print(f"[DEP-ZERO] adj={adj} tipo={tipo} amt_raw={amt_str!r} desc={descricao[:60]!r}", flush=True)
+        print(f"[DEP-ZERO] adj={adj} amt_raw={amt_str!r}", flush=True)
+        palavras_ord = sorted(grupo, key=lambda w: w["x"])
+        linha_ord = " ".join(w["text"] for w in palavras_ord)
+        for m in re.finditer(r'(?:US\$?|USS)\s*\$?\s*([-]?\s*[\d][\d,\.]*)', linha_ord, re.IGNORECASE):
+            v = _parse_valor(m.group(0))
+            if v != 0.0:
+                valor = abs(v) if tipo == "DEPOSIT" else -abs(v)
+                print(f"[DEP-FIXED] adj={adj} valor={valor}", flush=True)
+                break
 
     return Operacao(
         adj_no=adj,
