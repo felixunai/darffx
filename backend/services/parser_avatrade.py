@@ -278,11 +278,17 @@ def _detectar_secao(grupo: list[dict]) -> str | None:
 def _e_linha_close_ps(grupo: list[dict]) -> bool:
     """
     True se o grupo é uma linha de fechamento na seção P&S.
-    Só verifica 'CLOS' em qualquer posição — sem dependência de x ou data,
-    pois cabeçalhos nunca contêm 'CLOS'.
+    Exige 'CLOS' + nome de mês na mesma linha, descartando cabeçalhos como
+    'Corresponding Opened and Closed Orders from Your Account' que contêm
+    'CLOS' mas nunca têm um nome de mês.
     """
     linha = " ".join(w["text"].upper() for w in grupo)
-    return "CLOS" in linha
+    if "CLOS" not in linha:
+        return False
+    return bool(re.search(
+        r'\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b',
+        linha
+    ))
 
 
 def _e_linha_total_ps(grupo: list[dict]) -> bool:
