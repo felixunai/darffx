@@ -191,10 +191,14 @@ def _parse_com_secoes(todos_grupos: list[list[dict]]) -> list[Operacao]:
 
         # ── PURCHASE & SALES: extrai trades realizados ────────────────────────
         elif secao_atual == _SEC_PS:
+            linha_txt = " ".join(w["text"] for w in sorted(grupo, key=lambda w: w["x"]))
+            linha_up  = linha_txt.upper()
+            print(f"[PS] {linha_txt[:120]}", flush=True)
 
             if _e_linha_close_ps(grupo):
                 data  = _extrair_data_ps(grupo)
                 order = _extrair_order_ps(grupo)
+                print(f"[PS-CLOSE] order={order} date={data}", flush=True)
                 if data:
                     ps_data_close  = data
                 if order:
@@ -202,6 +206,7 @@ def _parse_com_secoes(todos_grupos: list[list[dict]]) -> list[Operacao]:
 
             elif _e_linha_total_ps(grupo):
                 net_pnl = _extrair_net_pnl(grupo)
+                print(f"[PS-TOTAL] pnl={net_pnl} date={ps_data_close} order={ps_close_order}", flush=True)
                 if ps_data_close is not None:
                     ps_contador += 1
                     adj_id = (
@@ -260,103 +265,79 @@ def _detectar_secao(grupo: list[dict]) -> str | None:
 
 def _e_linha_close_ps(grupo: list[dict]) -> bool:
     """
-    True se o grupo é uma linha de fechamento (CLOSE BUY / CLOSE SELL)
-    da seção Purchase & Sales.
-    A coluna Buy/Sell fica em x ≈ 450–700 na seção P&S.
-    Usa substring 'CLOS' para tolerar truncamentos OCR.
+    True se o grupo é uma linha de fechamento (CLOSE BUY / CLOSE SELL) na seção P&S.
+    Não usa posição X — procura 'CLOS' em qualquer parte da linha.
+    Exige também um padrão de data para distinguir de linhas de cabeçalho.
     """
-    palavras_meio = [
-        w["text"].upper()
-        for w in grupo
-        if 350 <= w["x"] <= 800
-    ]
-    return any("CLOS" in p for p in palavras_meio)
+    linha = " ".join(w["text"].upper() for w in grupo)
+    if "CLOS" not in linha:
+        return False
+    # Deve ter data (mês + ano) — evita falsos positivos em cabeçalhos
+    return bool(re.search(
+        r'(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+\d{1,2}\s+20\d\d',
+        linha, re.IGNORECASE
+    ))
 
 
 def _e_linha_total_ps(grupo: list[dict]) -> bool:
     """
     True se o grupo é uma linha TOTAL da seção Purchase & Sales.
-
-    Critérios:
-      - "TOTAL" aparece à esquerda (x < 250)
-      - Um dígito aparece na metade direita da linha (x > 1100), na coluna Net P/S
-
-    Threshold reduzido de 1400 → 1100 para tolerar variações de layout entre PDFs.
-    Falsos positivos com Trade Ledger não ocorrem porque esta função só é chamada
-    quando secao_atual == _SEC_PS.
+    Usa a posição relativa: 'Total' deve ser a primeira ou segunda palavra da linha
+    (menor x), e a linha deve conter pelo menos um dígito.
+    Não depende de threshold absoluto de x.
     """
-    texto_esq = " ".join(w["text"].upper() for w in grupo if w["x"] < 250)
-    if "TOTAL" not in texto_esq:
+    if not grupo:
         return False
-    return any(
-        w["x"] > 1100 and re.search(r'\d', w["text"])
-        for w in grupo
-    )
+    palavras_ord = sorted(grupo, key=lambda w: w["x"])
+    primeiras = " ".join(w["text"].upper() for w in palavras_ord[:2])
+    if "TOTAL" not in primeiras:
+        return False
+    linha = " ".join(w["text"] for w in grupo)
+    return bool(re.search(r'\d', linha))
 
 
 def _extrair_data_ps(grupo: list[dict]) -> datetime | None:
     """
-    Extrai a data de um leg de fechamento na seção P&S.
-
-    Na seção P&S, a coluna Order Date (GMT) fica em x ≈ 80–280, o que
-    sobrepõe com a coluna adj do Cash Ledger.  Coleta tokens nessa faixa,
-    descarta o número da ordem e tenta parsear a data.
-    Fallback: busca padrão de mês em qualquer posição da linha.
+    Extrai a data de fechamento de uma linha CLOSE na seção P&S.
+    Procura o padrão 'Mês DD YYYY HH:MM AM/PM' em qualquer posição.
+    Retorna a PRIMEIRA ocorrência (Order Date), não a Exp. Date.
     """
-    palavras = sorted(grupo, key=lambda w: w["x"])
-
-    # Tentativa principal: coluna Order Date (x ≈ 60–310)
-    texto = " ".join(w["text"] for w in palavras if 60 <= w["x"] <= 310)
-    texto = re.sub(r'^\d+\s*', '', texto).strip()
-    data = _parse_data(texto)
-    if data:
-        return data
-
-    # Fallback: busca padrão "Mês DD YYYY HH:MMAM/PM" em qualquer lugar da linha
-    linha = " ".join(w["text"] for w in palavras)
+    linha = " ".join(w["text"] for w in sorted(grupo, key=lambda w: w["x"]))
     m = re.search(
         r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)'
         r'\s+\d{1,2}\s+\d{4}\s+\d{1,2}:\d{2}(?:AM|PM)',
         linha,
         re.IGNORECASE,
     )
-    if m:
-        return _parse_data(m.group(0))
-
-    return None
+    return _parse_data(m.group(0)) if m else None
 
 
 def _extrair_order_ps(grupo: list[dict]) -> str | None:
-    """Extrai o número da ordem (6–8 dígitos) da coluna Order da seção P&S."""
+    """
+    Extrai o número da ordem (6–8 dígitos) da coluna Order na seção P&S.
+    O número da ordem é o primeiro bloco numérico de 6–8 dígitos na linha.
+    """
     palavras = sorted(grupo, key=lambda w: w["x"])
-    for w in palavras:
-        if w["x"] < 130:
-            for bloco in re.findall(r'\d+', w["text"]):
-                if 6 <= len(bloco) <= 8:
-                    return bloco
+    for w in palavras[:4]:   # as 4 primeiras palavras da esquerda
+        for bloco in re.findall(r'\d+', w["text"]):
+            if 6 <= len(bloco) <= 8:
+                return bloco
     return None
 
 
 def _extrair_net_pnl(grupo: list[dict]) -> float:
     """
-    Extrai o valor Net P/S de uma linha TOTAL da seção P&S.
-
-    A coluna Net P/S é a última (x ≈ 1360–1540). Usa x > 1350 para
-    capturar também o sinal negativo "-" que pode aparecer logo antes dos dígitos.
+    Extrai o Net P/S da linha TOTAL — o ÚLTIMO valor monetário da linha.
+    Itera os tokens da direita para a esquerda até encontrar um valor válido.
     """
-    palavras_dir = sorted(
-        [w for w in grupo if w["x"] > 1350],
-        key=lambda w: w["x"],
-    )
-    if palavras_dir:
-        val = _parse_valor(" ".join(w["text"] for w in palavras_dir))
+    todos = sorted(grupo, key=lambda w: -w["x"])   # direita → esquerda
+    # Tenta janelas crescentes de tokens da direita
+    for n in range(1, min(8, len(todos) + 1)):
+        txt = " ".join(w["text"] for w in todos[:n])
+        val = _parse_valor(txt)
         if val != 0.0:
             return val
-
-    # Fallback: 5 tokens mais à direita da linha inteira
-    todos = sorted(grupo, key=lambda w: -w["x"])
-    texto_fallback = " ".join(w["text"] for w in todos[:5])
-    return _parse_valor(texto_fallback)
+    return 0.0
 
 
 # ── OCR DE UMA PÁGINA (mantido para compatibilidade) ─────────────────────────
@@ -442,6 +423,9 @@ def _grupo_para_operacao(grupo: list[dict]) -> Operacao | None:
 
     # ── corrige tipo usando a descrição ───────────────────────────────────────
     tipo, valor = _corrigir_tipo_e_valor(tipo, descricao, valor)
+
+    if tipo in ("DEPOSIT", "WITHDRAWAL") and valor == 0.0:
+        print(f"[DEP-ZERO] adj={adj} tipo={tipo} amt_raw={amt_str!r} desc={descricao[:60]!r}", flush=True)
 
     return Operacao(
         adj_no=adj,
