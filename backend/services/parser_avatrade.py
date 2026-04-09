@@ -353,10 +353,14 @@ def _extrair_data_ps(grupo: list[dict]) -> datetime | None:
 def _extrair_order_ps(grupo: list[dict]) -> str | None:
     """
     Extrai o número da ordem (6–8 dígitos) da coluna Order na seção P&S.
-    O número da ordem é o primeiro bloco numérico de 6–8 dígitos na linha.
+    Restringe a busca a x < 200px (coluna mais à esquerda) para evitar
+    capturar o número de uma linha adjacente mesclada pelo OCR.
     """
     palavras = sorted(grupo, key=lambda w: w["x"])
-    for w in palavras[:4]:   # as 4 primeiras palavras da esquerda
+    # Primeira passagem: apenas coluna de ordem (x < 200px)
+    for w in palavras:
+        if w["x"] >= 200:
+            break
         for bloco in re.findall(r'\d+', w["text"]):
             if 6 <= len(bloco) <= 8:
                 return bloco
@@ -367,13 +371,19 @@ def _extrair_net_pnl(grupo: list[dict]) -> float:
     """
     Extrai o Net P/S da linha TOTAL — o ÚLTIMO valor monetário da linha.
     Itera os tokens da direita para a esquerda até encontrar um valor válido.
+    Se o valor é positivo mas há '-' nos tokens à esquerda (ex: 'TOTAL -US$ 49,07'),
+    inverte o sinal.
     """
     todos = sorted(grupo, key=lambda w: -w["x"])   # direita → esquerda
-    # Tenta janelas crescentes de tokens da direita
     for n in range(1, min(8, len(todos) + 1)):
         txt = " ".join(w["text"] for w in todos[:n])
         val = _parse_valor(txt)
         if val != 0.0:
+            # Verifica sinal negativo nos tokens à esquerda do valor
+            if val > 0 and n < len(todos):
+                restante = " ".join(w["text"] for w in todos[n:])
+                if "-" in restante:
+                    val = -val
             return val
     return 0.0
 
