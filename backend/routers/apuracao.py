@@ -21,7 +21,7 @@ from collections import defaultdict
 import uuid
 from io import BytesIO
 
-from ..services.parser_avatrade import parse_pdf_avatrade
+from ..services.parser_csv_avatrade import parse_csv_avatrade
 from ..services.calculo_ir import buscar_ptax_paralelo, calcular_ir_mensal, calcular_ir_anual
 from ..services.gerador_pdf import gerar_relatorio_pdf
 from ..models.database import Apuracao, ApuracaoAnual, Operacao, User, PtaxCache
@@ -38,16 +38,16 @@ async def upload_extrato(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_current_user),
 ):
-    if not arquivo.filename.lower().endswith(".pdf"):
-        raise HTTPException(400, "Envie um arquivo PDF.")
+    if not arquivo.filename.lower().endswith(".csv"):
+        raise HTTPException(400, "Envie um arquivo CSV.")
 
     _verificar_plano(usuario, db)
 
     conteudo = await arquivo.read()
     try:
-        operacoes = parse_pdf_avatrade(BytesIO(conteudo))
+        operacoes = parse_csv_avatrade(BytesIO(conteudo))
     except Exception as e:
-        raise HTTPException(422, f"Erro ao ler o PDF: {str(e)}")
+        raise HTTPException(422, f"Erro ao ler o CSV: {str(e)}")
 
     if not operacoes:
         raise HTTPException(422, "Nenhuma operação encontrada no arquivo.")

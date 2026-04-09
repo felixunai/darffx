@@ -38,8 +38,8 @@ export default function Upload() {
   }, [loading])
 
   const handleFile = (file) => {
-    if (!file?.name.toLowerCase().endsWith('.pdf')) {
-      setErro('Por favor envie um arquivo PDF.')
+    if (!file?.name.toLowerCase().endsWith('.csv')) {
+      setErro('Por favor envie um arquivo CSV.')
       return
     }
     setErro('')
@@ -91,7 +91,7 @@ export default function Upload() {
       <div style={{ maxWidth:600, margin:'0 auto' }}>
         <h1 style={{ fontSize:24, marginBottom:8 }}>Novo Extrato</h1>
         <p style={{ color:'var(--muted)', marginBottom:32 }}>
-          Faça o upload do PDF exportado da AvaTrade. O sistema calcula o IR de cada mês automaticamente.
+          Faça o upload do CSV gerado a partir do Account Statement da AvaTrade. O sistema calcula o IR de cada mês automaticamente.
         </p>
 
         {/* UPLOAD ZONE */}
@@ -105,14 +105,14 @@ export default function Upload() {
           <input
             ref={inputRef}
             type="file"
-            accept=".pdf"
+            accept=".csv"
             style={{ display:'none' }}
             onChange={e => handleFile(e.target.files[0])}
           />
 
           {arquivo ? (
             <>
-              <div style={{ fontSize:40, marginBottom:12 }}>📄</div>
+              <div style={{ fontSize:40, marginBottom:12 }}>📊</div>
               <div style={{ fontWeight:600, marginBottom:4 }}>{arquivo.name}</div>
               <div style={{ color:'var(--muted)', fontSize:13 }}>
                 {(arquivo.size / 1024).toFixed(0)} KB — clique para trocar
@@ -122,10 +122,10 @@ export default function Upload() {
             <>
               <div style={{ fontSize:40, marginBottom:12 }}>☁</div>
               <div style={{ fontWeight:600, marginBottom:8 }}>
-                Arraste o PDF aqui ou clique para selecionar
+                Arraste o CSV aqui ou clique para selecionar
               </div>
               <div style={{ color:'var(--muted)', fontSize:13 }}>
-                Extrato da AvaTrade (Account Statement PDF)
+                Extrato da AvaTrade exportado como CSV
               </div>
             </>
           )}
@@ -133,12 +133,37 @@ export default function Upload() {
 
         {/* COMO EXPORTAR */}
         <div className="card" style={{ marginTop:20, fontSize:13 }}>
-          <div style={{ fontWeight:600, marginBottom:10 }}>Como exportar o extrato da AvaTrade:</div>
-          <ol style={{ paddingLeft:20, display:'flex', flexDirection:'column', gap:6, color:'var(--muted)' }}>
-            <li>Acesse <strong style={{color:'var(--text)'}}>avaoptions.avatrade.com</strong></li>
-            <li>Vá em <strong style={{color:'var(--text)'}}>Relatórios → Account Statement</strong></li>
-            <li>Selecione o período desejado</li>
-            <li>Clique em <strong style={{color:'var(--text)'}}>Exportar PDF</strong></li>
+          <div style={{ fontWeight:600, marginBottom:10 }}>Como gerar o arquivo CSV:</div>
+          <ol style={{ paddingLeft:20, display:'flex', flexDirection:'column', gap:8, color:'var(--muted)' }}>
+            <li>
+              Acesse <strong style={{color:'var(--text)'}}>avaoptions.avatrade.com</strong>,
+              vá em <strong style={{color:'var(--text)'}}>Relatórios → Account Statement</strong> e selecione o período desejado
+            </li>
+            <li>
+              Na página do relatório, selecione <strong style={{color:'var(--text)'}}>todo o texto</strong> com{' '}
+              <kbd style={{
+                background:'var(--surface2)', border:'1px solid var(--border)',
+                borderRadius:4, padding:'1px 6px', fontFamily:'monospace', fontSize:12,
+              }}>Ctrl+A</kbd>{' '}e copie com{' '}
+              <kbd style={{
+                background:'var(--surface2)', border:'1px solid var(--border)',
+                borderRadius:4, padding:'1px 6px', fontFamily:'monospace', fontSize:12,
+              }}>Ctrl+C</kbd>
+            </li>
+            <li>
+              Abra o <strong style={{color:'var(--text)'}}>Excel</strong> ou{' '}
+              <strong style={{color:'var(--text)'}}>Google Planilhas</strong>, cole o conteúdo{' '}
+              (<kbd style={{
+                background:'var(--surface2)', border:'1px solid var(--border)',
+                borderRadius:4, padding:'1px 6px', fontFamily:'monospace', fontSize:12,
+              }}>Ctrl+V</kbd>) em uma nova planilha
+            </li>
+            <li>
+              Salve o arquivo como <strong style={{color:'var(--accent)'}}>CSV</strong>:{' '}
+              no Excel use <em>Arquivo → Salvar como → CSV (separado por vírgulas)</em>;
+              no Google Planilhas use <em>Arquivo → Fazer download → CSV</em>
+            </li>
+            <li>Faça o upload do arquivo <strong style={{color:'var(--accent)'}}>CSV</strong> aqui acima</li>
           </ol>
         </div>
 
@@ -210,9 +235,7 @@ export default function Upload() {
               </div>
               <span style={{ fontSize:11, color:'var(--muted)', whiteSpace:'nowrap' }}>
                 {elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed/60)}m${elapsed%60}s`}
-                {' · '}{arquivo
-                  ? arquivo.size > 3_000_000 ? '~3-4 min' : arquivo.size > 1_500_000 ? '~2-3 min' : '~1-2 min'
-                  : '~2-3 min'}
+                {' · '}~15-30s
               </span>
             </div>
           </div>
