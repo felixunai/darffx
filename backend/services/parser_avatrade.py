@@ -204,7 +204,10 @@ def _parse_com_secoes(todos_grupos: list[list[dict]]) -> list[Operacao]:
                     ps_data_close  = data
                 if order:
                     ps_close_order = order
-                ps_sinal_total   = 1   # reset sinal ao ver nova CLOSE line
+                # Detecta sinal do Net P/S na própria linha CLOSE (coluna mais
+                # à direita). Quando o OCR dropa o '-' da linha TOTAL, este sinal
+                # salvo aqui é aplicado no TOTAL subsequente.
+                ps_sinal_total   = _extrair_sinal_close(grupo)
                 ps_total_parcial = False
 
             elif _e_linha_total_ps(grupo):
@@ -212,10 +215,13 @@ def _parse_com_secoes(todos_grupos: list[list[dict]]) -> list[Operacao]:
                 # Verifica sinal na linha ("TOTAL -US$" sem dígito)
                 if net_pnl == 0.0:
                     linha_up = linha_txt.upper()
-                    ps_sinal_total   = -1 if "-" in linha_up else 1
+                    ps_sinal_total   = -1 if ("-" in linha_up or ps_sinal_total == -1) else 1
                     ps_total_parcial = True   # valor vem na próxima linha OCR
                     print(f"[PS-TOTAL-SPLIT] aguardando valor...", flush=True)
                 else:
+                    # Se o OCR dropou o '-' do TOTAL, usa o sinal detectado no CLOSE
+                    if ps_sinal_total == -1 and net_pnl > 0:
+                        net_pnl = -net_pnl
                     ps_total_parcial = False
                     _registrar_ps(ps_data_close, ps_close_order, net_pnl,
                                   ps_contador, ps_operacoes)
@@ -365,6 +371,28 @@ def _extrair_order_ps(grupo: list[dict]) -> str | None:
             if 6 <= len(bloco) <= 8:
                 return bloco
     return None
+
+
+def _extrair_sinal_close(grupo: list[dict]) -> int:
+    """
+    Detecta o sinal do Net P/S na linha CLOSE da seção P&S.
+    Verifica a palavra mais à direita do grupo (coluna Net P/S).
+    Se começar com '-', retorna -1; caso contrário, +1.
+    Usado para pré-capturar o sinal quando o OCR dropa o '-' da linha TOTAL.
+    """
+    if not grupo:
+        return 1
+    # A palavra mais à direita pertence à coluna Net P/S (última coluna)
+    mais_direita = max(grupo, key=lambda w: w["x"])
+    txt = mais_direita["text"].strip()
+    if txt.startswith("-"):
+        return -1
+    # Verifica as 3 palavras mais à direita por '-US$' ou sinal isolado
+    for w in sorted(grupo, key=lambda w: -w["x"])[:3]:
+        t = w["text"].strip()
+        if t == "-" or t.startswith("-US") or t.startswith("-u"):
+            return -1
+    return 1
 
 
 def _extrair_net_pnl(grupo: list[dict]) -> float:
