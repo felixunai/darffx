@@ -80,7 +80,7 @@ export default function LandingPage() {
         }}>
           O DarfFX calcula automaticamente seu imposto de renda sobre operações
           de Forex da AvaTrade, aplicando a Lei 14.754/2023 com PTAX oficial do
-          Banco Central. Faça o upload do extrato e pronto.
+          Banco Central. Copie o extrato, cole no Excel ou Google Planilhas, salve como CSV e pronto.
         </p>
 
         <div style={{ display:'flex', gap:12, flexWrap:'wrap', justifyContent:'center', marginBottom:56 }}>
@@ -102,7 +102,7 @@ export default function LandingPage() {
             ['15%', 'Alíquota fixa flat'],
             ['PTAX', 'Banco Central automático'],
             ['Lei 14.754', 'Compliance total'],
-            ['OCR', 'Leitura automática do PDF'],
+            ['CSV', 'Upload simples via planilha'],
           ].map(([v, l]) => (
             <div key={l} style={{ textAlign:'center' }}>
               <div style={{ fontSize:22, fontFamily:'Syne', fontWeight:800, color:'var(--accent)' }}>{v}</div>
@@ -169,14 +169,14 @@ export default function LandingPage() {
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))', gap:24 }}>
           {[
             {
-              num: '01', icon: '📄',
-              titulo: 'Faça o upload do extrato',
-              desc: 'Exporte o Account Statement PDF da AvaTrade e envie para o DarfFX. Suportamos extratos com múltiplos meses e anos.',
+              num: '01', icon: '📋',
+              titulo: 'Copie o extrato da AvaTrade',
+              desc: 'Acesse o Account Statement na AvaTrade, selecione tudo com Ctrl+A, copie com Ctrl+C e cole em uma planilha Excel ou Google Planilhas. Salve como CSV.',
             },
             {
               num: '02', icon: '⚡',
-              titulo: 'Calculamos automaticamente',
-              desc: 'Nosso sistema lê cada operação via OCR, busca a PTAX oficial do Banco Central e calcula seu IR seguindo a Lei 14.754/2023.',
+              titulo: 'Faça o upload do CSV',
+              desc: 'Envie o arquivo CSV para o DarfFX. Em segundos lemos cada operação, buscamos a PTAX oficial do Banco Central e calculamos seu IR seguindo a Lei 14.754/2023.',
             },
             {
               num: '03', icon: '📊',
@@ -327,7 +327,7 @@ export default function LandingPage() {
           Pronto para regularizar seu IR do Forex?
         </h2>
         <p style={{ color:'var(--muted)', fontSize:16, marginBottom:36, maxWidth:480, margin:'0 auto 36px' }}>
-          Crie sua conta grátis, faça o upload do extrato e veja seu resultado em minutos.
+          Crie sua conta grátis, faça o upload do CSV e veja seu resultado em segundos.
           Sem cartão de crédito para começar.
         </p>
         <button className="btn btn-primary" style={{ padding:'16px 40px', fontSize:17, borderRadius:14 }}
