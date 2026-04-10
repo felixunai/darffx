@@ -159,11 +159,21 @@ export default function Dashboard() {
   const desbloqueados    = anuais.filter(a => a.desbloqueado)
   const totalImposto     = r2(desbloqueados.reduce((s, a) => s + r2(a.imposto_brl), 0))
   const totalLucro       = r2(anuais.reduce((s, a) => s + r2(a.lucro_brl), 0))
+  const totalLucroUSD    = r2(anuais.reduce((s, a) => s + r2(a.lucro_usd), 0))
   const totalDepositos   = r2(anuais.reduce((s, a) => s + r2(a.depositos_usd), 0))
   const totalSaques      = r2(anuais.reduce((s, a) => s + r2(a.saques_usd), 0))
+  const capitalLiqUSD    = r2(totalDepositos - totalSaques)
+  const rentTotal        = capitalLiqUSD > 0 ? r2((totalLucroUSD / capitalLiqUSD) * 100) : null
   const impostoPendente  = r2(desbloqueados.filter(a => r2(a.imposto_brl) > 0 && !a.darf_pago).reduce((s, a) => s + r2(a.imposto_brl), 0))
   const anoAtual         = anuais.find(a => a.ano === anoSel)
   const anoSelDesbloqueado = anoAtual?.desbloqueado ?? false
+
+  // ── Gráfico: rentabilidade % por ano ─────────────────────────────────────
+  const chartRentAnual = [...anuais].sort((a, b) => a.ano - b.ano).map(a => ({
+    name: String(a.ano),
+    rent: r2(a.depositos_usd) > 0 ? r2((r2(a.lucro_usd) / r2(a.depositos_usd)) * 100) : null,
+    ano:  a.ano,
+  }))
 
   // ── Insights do ano selecionado (derivados de mesesDetalhe) ──────────────
   const mesesOrdenados = [...mesesDetalhe].sort((a, b) =>
@@ -297,6 +307,51 @@ export default function Dashboard() {
               cor={impostoPendente > 0 ? 'var(--danger)' : undefined}
               mobile={mobile}
             />
+          </div>
+
+          {/* ── DESDE O INÍCIO ──────────────────────────────────────────── */}
+          <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, letterSpacing:'1px', marginBottom:10, marginTop:4 }}>
+            DESDE O INÍCIO · {anuais.length} {anuais.length === 1 ? 'ANO' : 'ANOS'} REGISTRADO{anuais.length !== 1 ? 'S' : ''}
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(3,1fr)', gap:12, marginBottom:24 }}>
+            {/* Capital líquido */}
+            <div className="card" style={{ borderColor:'rgba(0,149,255,0.25)', padding: mobile ? 14 : undefined }}>
+              <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:6 }}>Capital líquido</div>
+              <div style={{ fontSize: mobile ? 14 : 19, fontFamily:'Syne', fontWeight:800, color:'var(--accent2)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                {fmtUSD(capitalLiqUSD)}
+              </div>
+              <div style={{ fontSize:10, color:'var(--muted)', marginTop:5, lineHeight:1.6 }}>
+                +{fmtUSD(totalDepositos)} dep.<br/>
+                {totalSaques > 0 ? `-${fmtUSD(totalSaques)} saq.` : 'sem saques'}
+              </div>
+            </div>
+
+            {/* P&L total */}
+            <div className="card" style={{ borderColor: totalLucro >= 0 ? 'rgba(0,229,160,0.25)' : 'rgba(255,77,109,0.25)', padding: mobile ? 14 : undefined }}>
+              <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:6 }}>P&L total</div>
+              <div style={{ fontSize: mobile ? 14 : 19, fontFamily:'Syne', fontWeight:800, color: totalLucro >= 0 ? 'var(--accent)' : 'var(--danger)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                {fmtBRL(totalLucro)}
+              </div>
+              <div style={{ fontSize:10, color:'var(--muted)', marginTop:5 }}>
+                {totalLucroUSD >= 0 ? '+' : ''}{fmtUSD(totalLucroUSD)} em USD
+              </div>
+            </div>
+
+            {/* Rentabilidade total */}
+            <div className="card" style={{
+              borderColor: rentTotal !== null ? (rentTotal >= 0 ? 'rgba(0,229,160,0.25)' : 'rgba(255,77,109,0.25)') : undefined,
+              gridColumn: mobile ? 'span 2' : undefined,
+              padding: mobile ? 14 : undefined,
+            }}>
+              <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:6 }}>Rentabilidade total</div>
+              <div style={{ fontSize: mobile ? 14 : 19, fontFamily:'Syne', fontWeight:800, lineHeight:1.2,
+                color: rentTotal === null ? 'var(--muted)' : rentTotal >= 0 ? 'var(--accent)' : 'var(--danger)',
+              }}>
+                {rentTotal === null ? '—'
+                  : `${rentTotal >= 0 ? '+' : ''}${rentTotal.toLocaleString('pt-BR', { minimumFractionDigits:1, maximumFractionDigits:1 })}%`}
+              </div>
+              <div style={{ fontSize:10, color:'var(--muted)', marginTop:5 }}>sobre capital líquido (USD)</div>
+            </div>
           </div>
 
           {/* ── ROW 2: Insights do ano selecionado ──────────────────────── */}
@@ -538,6 +593,36 @@ export default function Dashboard() {
                       )
                     })}
                   </div>
+                </div>
+              )}
+
+              {/* Rentabilidade % por ano (só se múltiplos anos) */}
+              {anuais.length > 1 && chartRentAnual.some(d => d.rent !== null) && (
+                <div className="card">
+                  <h3 style={{ fontSize:14, marginBottom:4 }}>Rentabilidade por ano (%)</h3>
+                  <p style={{ fontSize:11, color:'var(--muted)', marginBottom:12 }}>P&L ÷ depósitos de cada ano</p>
+                  <ResponsiveContainer width="100%" height={160}>
+                    <BarChart data={chartRentAnual} barSize={36}
+                      onClick={(d) => d?.activePayload && setAnoSel(d.activePayload[0]?.payload?.ano)}>
+                      <XAxis dataKey="name" tick={{ fill:'#8899aa', fontSize:12 }} axisLine={false} tickLine={false} />
+                      <YAxis hide />
+                      <Tooltip
+                        {...TOOLTIP_STYLE}
+                        formatter={(v) => v === null ? ['—', 'Rentabilidade'] : [`${v >= 0 ? '+' : ''}${v?.toLocaleString('pt-BR', { minimumFractionDigits:1, maximumFractionDigits:1 })}%`, 'Rentabilidade']}
+                      />
+                      <Bar dataKey="rent" radius={[6,6,0,0]}>
+                        {chartRentAnual.map((e, i) => (
+                          <Cell key={i}
+                            fill={e.rent === null ? '#3ecf8e40' : e.rent >= 0 ? '#00e5a0' : '#ff4d6d'}
+                            opacity={e.ano === anoSel ? 1 : 0.7}
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                  <p style={{ fontSize:11, color:'var(--muted)', textAlign:'center', marginTop:8 }}>
+                    Clique em um ano para ver o detalhamento
+                  </p>
                 </div>
               )}
 
