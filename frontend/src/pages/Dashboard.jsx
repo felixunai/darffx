@@ -500,6 +500,47 @@ export default function Dashboard() {
                 </div>
               )}
 
+              {/* Rentabilidade */}
+              {rentAnual !== null && rentMensal.length > 0 && (
+                <div className="card">
+                  <h3 style={{ fontSize:14, marginBottom:2 }}>Rentabilidade — {anoSel}</h3>
+                  <p style={{ fontSize:11, color:'var(--muted)', marginBottom:12 }}>
+                    Sobre capital depositado ({fmtBRL(rentBase)})
+                  </p>
+                  <div style={{ display:'flex', gap:10, marginBottom:14 }}>
+                    <div style={{ flex:1, background:'var(--surface2)', borderRadius:8, padding:'10px 12px' }}>
+                      <div style={{ fontSize:9, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:4 }}>Anual</div>
+                      <div style={{ fontSize:20, fontFamily:'Syne', fontWeight:800, color: rentAnual >= 0 ? 'var(--accent)' : 'var(--danger)', lineHeight:1 }}>
+                        {rentAnual >= 0 ? '+' : ''}{rentAnual.toLocaleString('pt-BR', { minimumFractionDigits:1, maximumFractionDigits:1 })}%
+                      </div>
+                    </div>
+                    <div style={{ flex:1, background:'var(--surface2)', borderRadius:8, padding:'10px 12px' }}>
+                      <div style={{ fontSize:9, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:4 }}>Média/mês</div>
+                      <div style={{ fontSize:20, fontFamily:'Syne', fontWeight:800, color: rentMedia >= 0 ? 'var(--accent)' : 'var(--danger)', lineHeight:1 }}>
+                        {rentMedia >= 0 ? '+' : ''}{rentMedia?.toLocaleString('pt-BR', { minimumFractionDigits:1, maximumFractionDigits:1 })}%
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                    {rentMensal.map(({ nome, pct }) => {
+                      const cor = pct >= 0 ? 'var(--accent)' : 'var(--danger)'
+                      const largura = `${Math.round((Math.abs(pct) / rentMaxAbs) * 100)}%`
+                      return (
+                        <div key={nome} style={{ display:'flex', alignItems:'center', gap:8 }}>
+                          <div style={{ width:26, fontSize:10, color:'var(--muted)', flexShrink:0 }}>{nome}</div>
+                          <div style={{ flex:1, height:6, background:'var(--surface2)', borderRadius:4, overflow:'hidden', minWidth:0 }}>
+                            <div style={{ height:'100%', width:largura, background:cor, borderRadius:4, transition:'width 0.4s ease' }} />
+                          </div>
+                          <div style={{ width:46, fontSize:11, color:cor, fontWeight:700, textAlign:'right', flexShrink:0 }}>
+                            {pct >= 0 ? '+' : ''}{pct.toLocaleString('pt-BR', { minimumFractionDigits:1, maximumFractionDigits:1 })}%
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Imposto por ano (só se múltiplos anos) */}
               {anuais.length > 1 && (
                 <div className="card">
@@ -525,58 +566,6 @@ export default function Dashboard() {
                   </p>
                 </div>
               )}
-            </div>
-          )}
-
-          {/* ── Rentabilidade (standalone, full-width) ───────────────────── */}
-          {anoSelDesbloqueado && rentAnual !== null && rentMensal.length > 0 && (
-            <div className="card" style={{ marginBottom:16 }}>
-              <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between', flexWrap:'wrap', gap:8, marginBottom:4 }}>
-                <h3 style={{ fontSize:15, margin:0 }}>Rentabilidade — {anoSel}</h3>
-                <span style={{ fontSize:12, color:'var(--muted)' }}>
-                  Capital base: {fmtBRL(rentBase)}
-                </span>
-              </div>
-              <p style={{ fontSize:11, color:'var(--muted)', marginBottom:20 }}>
-                Retorno percentual sobre o capital depositado no ano
-              </p>
-
-              <div style={{ display:'grid', gridTemplateColumns: mobile ? '1fr' : '200px 1fr', gap: mobile ? 16 : 32, alignItems:'start' }}>
-                {/* Números principais */}
-                <div style={{ display:'flex', flexDirection: mobile ? 'row' : 'column', gap:12 }}>
-                  <div style={{ flex:1, background:'var(--surface2)', borderRadius:10, padding:'14px 16px' }}>
-                    <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:6 }}>Anual</div>
-                    <div style={{ fontSize:28, fontFamily:'Syne', fontWeight:800, color: rentAnual >= 0 ? 'var(--accent)' : 'var(--danger)', lineHeight:1 }}>
-                      {rentAnual >= 0 ? '+' : ''}{rentAnual.toLocaleString('pt-BR', { minimumFractionDigits:1, maximumFractionDigits:1 })}%
-                    </div>
-                  </div>
-                  <div style={{ flex:1, background:'var(--surface2)', borderRadius:10, padding:'14px 16px' }}>
-                    <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:6 }}>Média/mês</div>
-                    <div style={{ fontSize:28, fontFamily:'Syne', fontWeight:800, color: rentMedia >= 0 ? 'var(--accent)' : 'var(--danger)', lineHeight:1 }}>
-                      {rentMedia >= 0 ? '+' : ''}{rentMedia?.toLocaleString('pt-BR', { minimumFractionDigits:1, maximumFractionDigits:1 })}%
-                    </div>
-                  </div>
-                </div>
-
-                {/* Barras mensais */}
-                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                  {rentMensal.map(({ nome, pct }) => {
-                    const cor = pct >= 0 ? 'var(--accent)' : 'var(--danger)'
-                    const largura = `${Math.round((Math.abs(pct) / rentMaxAbs) * 100)}%`
-                    return (
-                      <div key={nome} style={{ display:'flex', alignItems:'center', gap:10 }}>
-                        <div style={{ width:28, fontSize:11, color:'var(--muted)', flexShrink:0 }}>{nome}</div>
-                        <div style={{ flex:1, height:7, background:'var(--surface2)', borderRadius:4, overflow:'hidden', minWidth:0 }}>
-                          <div style={{ height:'100%', width:largura, background:cor, borderRadius:4, transition:'width 0.4s ease' }} />
-                        </div>
-                        <div style={{ width:52, fontSize:12, color:cor, fontWeight:700, textAlign:'right', flexShrink:0 }}>
-                          {pct >= 0 ? '+' : ''}{pct.toLocaleString('pt-BR', { minimumFractionDigits:1, maximumFractionDigits:1 })}%
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
             </div>
           )}
 
