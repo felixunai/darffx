@@ -26,6 +26,14 @@ const fmtCompact = (v) => {
   return `${sign}${abs.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`
 }
 
+const fmtCompactBRL = (v) => {
+  if (v === null || v === undefined) return ''
+  const abs = Math.abs(v)
+  const sign = v >= 0 ? '+' : '-'
+  if (abs >= 1000) return `${sign}R$${(abs / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}k`
+  return `${sign}R$${abs.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`
+}
+
 const TOOLTIP_STYLE = {
   contentStyle: { background:'#1a2235', border:'1px solid rgba(255,255,255,0.12)', borderRadius:8, fontSize:12, color:'#e8edf5' },
   labelStyle: { color:'#8899aa' },
@@ -486,14 +494,14 @@ export default function Dashboard() {
                     <span className="spinner" />
                   </div>
                 ) : (
-                  <ResponsiveContainer width="100%" height={160}>
-                    <BarChart data={chartMensal} barSize={22}>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <BarChart data={chartMensal} barSize={22} margin={{ top:20, right:4, left:4, bottom:0 }}>
                       <XAxis dataKey="name" tick={{ fill:'#8899aa', fontSize:11 }} axisLine={false} tickLine={false} />
                       <YAxis hide />
                       <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [fmtBRL(v), 'Resultado']} />
                       <Bar dataKey="lucro" radius={[4,4,0,0]}>
                         <LabelList dataKey="lucro" position="top"
-                          formatter={fmtCompact}
+                          formatter={fmtCompactBRL}
                           style={{ fontSize:9, fill:'#8899aa' }} />
                         {chartMensal.map((e, i) => (
                           <Cell key={i} fill={e.lucro >= 0 ? '#00e5a0' : '#ff4d6d'} />
@@ -549,7 +557,8 @@ export default function Dashboard() {
                     {donutData.map((e) => (
                       <div key={e.name} style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#8899aa' }}>
                         <div style={{ width:8, height:8, borderRadius:'50%', background:e.color, flexShrink:0 }} />
-                        {e.name}
+                        <span>{e.name}</span>
+                        <span style={{ color:'var(--text)', fontWeight:600 }}>{fmtBRL(e.value)}</span>
                       </div>
                     ))}
                   </div>
@@ -646,8 +655,8 @@ export default function Dashboard() {
                 <div className="card">
                   <h3 style={{ fontSize:14, marginBottom:4 }}>Rentabilidade por ano (%)</h3>
                   <p style={{ fontSize:11, color:'var(--muted)', marginBottom:12 }}>P&L ÷ depósitos de cada ano</p>
-                  <ResponsiveContainer width="100%" height={160}>
-                    <BarChart data={chartRentAnual} barSize={36}
+                  <ResponsiveContainer width="100%" height={180}>
+                    <BarChart data={chartRentAnual} barSize={36} margin={{ top:20, right:4, left:4, bottom:0 }}
                       onClick={(d) => d?.activePayload && setAnoSel(d.activePayload[0]?.payload?.ano)}>
                       <XAxis dataKey="name" tick={{ fill:'#8899aa', fontSize:12 }} axisLine={false} tickLine={false} />
                       <YAxis hide />
@@ -678,15 +687,15 @@ export default function Dashboard() {
               {anuais.length > 1 && (
                 <div className="card">
                   <h3 style={{ fontSize:14, marginBottom:16 }}>Imposto por ano</h3>
-                  <ResponsiveContainer width="100%" height={160}>
-                    <BarChart data={chartAnual} barSize={36}
+                  <ResponsiveContainer width="100%" height={180}>
+                    <BarChart data={chartAnual} barSize={36} margin={{ top:20, right:4, left:4, bottom:0 }}
                       onClick={(d) => d?.activePayload && setAnoSel(d.activePayload[0]?.payload?.ano)}>
                       <XAxis dataKey="name" tick={{ fill:'#8899aa', fontSize:12 }} axisLine={false} tickLine={false} />
                       <YAxis hide />
                       <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [fmtBRL(v), 'Imposto']} />
                       <Bar dataKey="imposto" radius={[6,6,0,0]}>
                         <LabelList dataKey="imposto" position="top"
-                          formatter={(v) => v > 0 ? fmtCompact(v) : ''}
+                          formatter={(v) => v > 0 ? fmtCompactBRL(v) : ''}
                           style={{ fontSize:10, fill:'#8899aa' }} />
                         {chartAnual.map((e, i) => (
                           <Cell key={i}
