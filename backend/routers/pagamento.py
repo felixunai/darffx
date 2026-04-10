@@ -99,8 +99,7 @@ async def checkout(
         product_data["images"] = [img_url]
 
     session = stripe.checkout.Session.create(
-        payment_method_types=["card", "pix"],
-        payment_method_options={"pix": {"expires_after_seconds": 3600}},
+        payment_method_types=["card"],
         line_items=[{
             "price_data": {
                 "currency": "brl",
