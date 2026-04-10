@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  AreaChart, Area, PieChart, Pie, Legend,
+} from 'recharts'
 import Layout from '../components/Layout'
-import api    from '../api'
+import api from '../api'
 
 const MESES_CURTO = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 
@@ -15,30 +18,50 @@ const fmtVenc = (iso) => {
   return `${d}/${m}/${y}`
 }
 
-function CardStat({ label, valor, cor }) {
+const TOOLTIP_STYLE = {
+  contentStyle: { background:'#1a2235', border:'1px solid rgba(255,255,255,0.12)', borderRadius:8, fontSize:12, color:'#e8edf5' },
+  labelStyle: { color:'#8899aa' },
+  itemStyle: { color:'#e8edf5' },
+}
+
+function CardStat({ label, valor, cor, sub }) {
   return (
     <div className="card" style={{ borderColor: cor ? `${cor}30` : undefined }}>
-      <div style={{ fontSize:12, color:'var(--muted)', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.5px' }}>{label}</div>
-      <div style={{ fontSize:22, fontFamily:'Syne', fontWeight:800, color: cor || 'var(--text)' }}>{valor}</div>
+      <div style={{ fontSize:11, color:'var(--muted)', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.5px' }}>{label}</div>
+      <div style={{ fontSize:21, fontFamily:'Syne', fontWeight:800, color: cor || 'var(--text)', lineHeight:1.2 }}>{valor}</div>
+      {sub && <div style={{ fontSize:11, color:'var(--muted)', marginTop:5 }}>{sub}</div>}
+    </div>
+  )
+}
+
+function CardInsight({ icon, label, valor, cor, sub }) {
+  return (
+    <div className="card" style={{ display:'flex', gap:14, alignItems:'center', borderColor: cor ? `${cor}20` : undefined }}>
+      <div style={{ fontSize:28, flexShrink:0 }}>{icon}</div>
+      <div style={{ minWidth:0 }}>
+        <div style={{ fontSize:11, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:4 }}>{label}</div>
+        <div style={{ fontSize:17, fontFamily:'Syne', fontWeight:800, color: cor || 'var(--text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{valor}</div>
+        {sub && <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>{sub}</div>}
+      </div>
     </div>
   )
 }
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const [anuais,     setAnuais]     = useState([])
-  const [loading,    setLoading]    = useState(true)
-  const [deletando,  setDeletando]  = useState(null)
-  const [anoSel,     setAnoSel]     = useState(null)   // ano selecionado para gráfico mensal
-  const [mesesDetalhe, setMesesDetalhe] = useState([]) // breakdown mensal do ano selecionado
+  const [anuais,       setAnuais]       = useState([])
+  const [loading,      setLoading]      = useState(true)
+  const [deletando,    setDeletando]    = useState(null)
+  const [anoSel,       setAnoSel]       = useState(null)
+  const [mesesDetalhe, setMesesDetalhe] = useState([])
   const [loadingMeses, setLoadingMeses] = useState(false)
+  const [baixandoXlsx, setBaixandoXlsx] = useState(false)
 
   useEffect(() => {
     api.get('/apuracao/anual/')
       .then(r => {
         const lista = Array.isArray(r.data) ? r.data : []
         setAnuais(lista)
-        // Seleciona o ano mais recente por padrão
         if (lista.length > 0) {
           const maisRecente = lista.reduce((a, b) => a.ano > b.ano ? a : b).ano
           setAnoSel(maisRecente)
@@ -48,7 +71,23 @@ export default function Dashboard() {
       .finally(() => setLoading(false))
   }, [])
 
-  // Busca breakdown mensal quando o ano selecionado muda
+  const baixarXlsx = async (ano) => {
+    setBaixandoXlsx(true)
+    try {
+      const { data } = await api.get(`/apuracao/anual/${ano}/xlsx`, { responseType: 'blob' })
+      const url  = URL.createObjectURL(data)
+      const link = document.createElement('a')
+      link.href  = url
+      link.download = `darffx_${ano}.xlsx`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      alert('Erro ao exportar. Tente novamente.')
+    } finally {
+      setBaixandoXlsx(false)
+    }
+  }
+
   const buscarMeses = useCallback(async (ano) => {
     setLoadingMeses(true)
     try {
@@ -79,15 +118,69 @@ export default function Dashboard() {
     }
   }
 
-  const desbloqueados  = anuais.filter(a => a.desbloqueado)
-  const totalImposto   = r2(desbloqueados.reduce((s, a) => s + r2(a.imposto_brl), 0))
-  const totalLucro     = r2(anuais.reduce((s, a) => s + r2(a.lucro_brl),    0))
-  const totalDepositos = r2(anuais.reduce((s, a) => s + r2(a.depositos_usd),0))
-  const totalSaques    = r2(anuais.reduce((s, a) => s + r2(a.saques_usd),   0))
-  const impostoPendente   = r2(desbloqueados.filter(a => r2(a.imposto_brl) > 0 && !a.darf_pago).reduce((s, a) => s + r2(a.imposto_brl), 0))
-  const anoSelDesbloqueado = anuais.find(a => a.ano === anoSel)?.desbloqueado ?? false
+  // ── Derivados globais ────────────────────────────────────────────────────
+  const desbloqueados    = anuais.filter(a => a.desbloqueado)
+  const totalImposto     = r2(desbloqueados.reduce((s, a) => s + r2(a.imposto_brl), 0))
+  const totalLucro       = r2(anuais.reduce((s, a) => s + r2(a.lucro_brl), 0))
+  const totalDepositos   = r2(anuais.reduce((s, a) => s + r2(a.depositos_usd), 0))
+  const totalSaques      = r2(anuais.reduce((s, a) => s + r2(a.saques_usd), 0))
+  const impostoPendente  = r2(desbloqueados.filter(a => r2(a.imposto_brl) > 0 && !a.darf_pago).reduce((s, a) => s + r2(a.imposto_brl), 0))
+  const anoAtual         = anuais.find(a => a.ano === anoSel)
+  const anoSelDesbloqueado = anoAtual?.desbloqueado ?? false
 
-  // Gráfico anual (visão geral)
+  // ── Insights do ano selecionado (derivados de mesesDetalhe) ──────────────
+  const mesesOrdenados = [...mesesDetalhe].sort((a, b) =>
+    a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes
+  )
+  const melhorMes = mesesDetalhe.length > 0
+    ? mesesDetalhe.reduce((best, m) => m.ganho_brl > best.ganho_brl ? m : best)
+    : null
+  const piorMes = mesesDetalhe.length > 0
+    ? mesesDetalhe.reduce((worst, m) => m.ganho_brl < worst.ganho_brl ? m : worst)
+    : null
+  const mesesPositivos = mesesDetalhe.filter(m => m.ganho_brl > 0).length
+  const taxaLucro = mesesDetalhe.length > 0
+    ? Math.round((mesesPositivos / mesesDetalhe.length) * 100)
+    : 0
+
+  // Sequência atual de meses positivos ou negativos
+  let streak = 0
+  let streakPositivo = true
+  if (mesesOrdenados.length > 0) {
+    streakPositivo = mesesOrdenados[mesesOrdenados.length - 1].ganho_brl >= 0
+    for (let i = mesesOrdenados.length - 1; i >= 0; i--) {
+      if ((mesesOrdenados[i].ganho_brl >= 0) === streakPositivo) streak++
+      else break
+    }
+  }
+
+  // ── Gráfico: P&L mensal por barras ───────────────────────────────────────
+  const chartMensal = mesesOrdenados.map(m => ({
+    name:  MESES_CURTO[m.mes - 1],
+    lucro: r2(m.ganho_brl),
+    mes:   m.mes,
+    id:    m.id,
+  }))
+
+  // ── Gráfico: P&L acumulado (AreaChart) ───────────────────────────────────
+  const chartCumulativo = mesesOrdenados.reduce((acc, m) => {
+    const prev = acc.length > 0 ? acc[acc.length - 1].cumul : 0
+    acc.push({ name: MESES_CURTO[m.mes - 1], cumul: r2(prev + m.ganho_brl) })
+    return acc
+  }, [])
+
+  // ── Gráfico: Depósito vs Lucro (donut) ───────────────────────────────────
+  const ptaxMedio = mesesDetalhe.filter(m => m.ptax).length > 0
+    ? mesesDetalhe.filter(m => m.ptax).reduce((s, m) => s + m.ptax, 0) / mesesDetalhe.filter(m => m.ptax).length
+    : 5.0
+  const depositosBRL = r2((anoAtual?.depositos_usd || 0) * ptaxMedio)
+  const lucroBRL     = r2(Math.max(0, anoAtual?.lucro_brl || 0))
+  const donutData = depositosBRL + lucroBRL > 0 ? [
+    { name: 'Depósitos', value: depositosBRL, color: '#0095ff' },
+    { name: 'Lucro trading', value: lucroBRL, color: '#00e5a0' },
+  ] : []
+
+  // ── Gráfico: imposto por ano ──────────────────────────────────────────────
   const chartAnual = [...anuais].sort((a, b) => a.ano - b.ano).map(a => ({
     name:    String(a.ano),
     imposto: a.desbloqueado ? r2(a.imposto_brl) : 0,
@@ -96,19 +189,19 @@ export default function Dashboard() {
     locked:  !a.desbloqueado,
   }))
 
-  // Gráfico mensal (breakdown do ano selecionado)
-  const chartMensal = [...mesesDetalhe]
-    .sort((a, b) => a.mes - b.mes)
-    .map(m => ({
-      name:    MESES_CURTO[m.mes - 1],
-      lucro:   r2(m.ganho_brl),
-      mes:     m.mes,
-      id:      m.id,
-    }))
+  // ── DARF countdown ────────────────────────────────────────────────────────
+  const vencDarf   = anoAtual?.vencimento_darf
+  const diasDarf   = vencDarf ? Math.ceil((new Date(vencDarf) - new Date()) / 86400000) : null
+  const darfUrgente = anoSelDesbloqueado && r2(anoAtual?.imposto_brl) > 0 && !anoAtual?.darf_pago
+  const darfCor = diasDarf === null ? null
+    : diasDarf < 0   ? 'var(--danger)'
+    : diasDarf < 30  ? 'var(--danger)'
+    : diasDarf < 60  ? 'var(--warn)'
+    : 'var(--accent)'
 
   return (
     <Layout>
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:32 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:28 }}>
         <div>
           <h1 style={{ fontSize:24, marginBottom:4 }}>Dashboard</h1>
           <p style={{ color:'var(--muted)', fontSize:13 }}>
@@ -126,63 +219,115 @@ export default function Dashboard() {
         <Empty navigate={navigate} />
       ) : (
         <>
-          {/* STATS */}
-          <div className="grid-4" style={{ marginBottom:24 }}>
+          {/* ── ROW 1: Stats principais ─────────────────────────────────── */}
+          <div className="grid-4" style={{ marginBottom:16 }}>
             <CardStat label="Anos apurados" valor={anuais.length} />
-            <CardStat label="Lucro total (BRL)" valor={fmtBRL(totalLucro)}
-              cor={totalLucro >= 0 ? 'var(--accent)' : 'var(--danger)'} />
-            <CardStat label="Imposto total" valor={desbloqueados.length > 0 ? fmtBRL(totalImposto) : '🔒 Bloqueado'} cor="var(--warn)" />
-            <CardStat label="Imposto anual a pagar" valor={desbloqueados.length > 0 ? fmtBRL(impostoPendente) : '—'}
-              cor={impostoPendente > 0 ? 'var(--danger)' : undefined} />
+            <CardStat
+              label="Lucro total (BRL)"
+              valor={fmtBRL(totalLucro)}
+              cor={totalLucro >= 0 ? 'var(--accent)' : 'var(--danger)'}
+            />
+            <CardStat
+              label="Imposto total"
+              valor={desbloqueados.length > 0 ? fmtBRL(totalImposto) : '🔒 Bloqueado'}
+              cor="var(--warn)"
+            />
+            <CardStat
+              label="Imposto a pagar"
+              valor={desbloqueados.length > 0 ? fmtBRL(impostoPendente) : '—'}
+              cor={impostoPendente > 0 ? 'var(--danger)' : undefined}
+            />
           </div>
 
-          {/* GRÁFICOS */}
-          <div style={{ display:'grid', gridTemplateColumns: (anuais.length > 1 && anoSelDesbloqueado) ? '1fr 1fr' : '1fr', gap:16, marginBottom:24 }}>
-            {/* Gráfico anual */}
-            {anuais.length > 1 && (
-              <div className="card">
-                <h3 style={{ fontSize:14, marginBottom:16 }}>Imposto por ano</h3>
-                <ResponsiveContainer width="100%" height={160}>
-                  <BarChart data={chartAnual} barSize={36}
-                    onClick={(d) => d?.activePayload && setAnoSel(d.activePayload[0]?.payload?.ano)}>
-                    <XAxis dataKey="name" tick={{ fill:'var(--muted)', fontSize:12 }} axisLine={false} tickLine={false} />
-                    <YAxis hide />
-                    <Tooltip
-                      contentStyle={{ background:'#1a2235', border:'1px solid rgba(255,255,255,0.12)', borderRadius:8, fontSize:12, color:'#e8edf5' }}
-                      formatter={(v) => [fmtBRL(v), 'Imposto']}
-                      labelStyle={{ color:'#8899aa' }}
-                      itemStyle={{ color:'#e8edf5' }}
-                    />
-                    <Bar dataKey="imposto" radius={[6,6,0,0]}>
-                      {chartAnual.map((e, i) => (
-                        <Cell key={i}
-                          fill={e.ano === anoSel ? 'var(--accent)' : (e.imposto > 0 ? 'var(--warn)' : '#3ecf8e60')}
-                          opacity={e.ano === anoSel ? 1 : 0.7}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-                <p style={{ fontSize:11, color:'var(--muted)', textAlign:'center', marginTop:8 }}>
-                  Clique em um ano para ver o detalhamento mensal
-                </p>
-              </div>
-            )}
+          {/* ── ROW 2: Insights do ano selecionado ──────────────────────── */}
+          {mesesDetalhe.length > 0 && anoSelDesbloqueado && (
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:12, marginBottom:16 }}>
+              <CardInsight
+                icon="🏆"
+                label="Melhor mês"
+                valor={melhorMes ? fmtBRL(melhorMes.ganho_brl) : '—'}
+                cor="var(--accent)"
+                sub={melhorMes ? `${MESES_CURTO[melhorMes.mes - 1]}/${melhorMes.ano || anoSel}` : undefined}
+              />
+              <CardInsight
+                icon="📉"
+                label="Pior mês"
+                valor={piorMes ? fmtBRL(piorMes.ganho_brl) : '—'}
+                cor={piorMes && piorMes.ganho_brl < 0 ? 'var(--danger)' : 'var(--muted)'}
+                sub={piorMes ? `${MESES_CURTO[piorMes.mes - 1]}/${piorMes.ano || anoSel}` : undefined}
+              />
+              <CardInsight
+                icon="🎯"
+                label="Meses lucrativos"
+                valor={`${mesesPositivos} de ${mesesDetalhe.length}`}
+                cor="var(--accent)"
+                sub={`${taxaLucro}% de acerto`}
+              />
+              <CardInsight
+                icon={streakPositivo ? '🔥' : '❄️'}
+                label="Sequência atual"
+                valor={`${streak} ${streak === 1 ? 'mês' : 'meses'}`}
+                cor={streakPositivo ? 'var(--accent)' : 'var(--danger)'}
+                sub={streakPositivo ? 'positivos seguidos' : 'negativos seguidos'}
+              />
+            </div>
+          )}
 
-            {/* Gráfico mensal do ano selecionado — só para desbloqueados */}
-            {anoSel && anoSelDesbloqueado && (
+          {/* ── DARF COUNTDOWN ──────────────────────────────────────────── */}
+          {darfUrgente && diasDarf !== null && (
+            <div style={{
+              background: `rgba(${diasDarf < 30 ? '255,77,109' : diasDarf < 60 ? '255,179,71' : '0,229,160'},0.07)`,
+              border:`1px solid ${darfCor}`,
+              borderRadius:14, padding:'16px 24px', marginBottom:16,
+              display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:12,
+            }}>
+              <div style={{ display:'flex', alignItems:'center', gap:14 }}>
+                <div style={{ textAlign:'center', minWidth:56 }}>
+                  <div style={{ fontSize:32, fontFamily:'Syne', fontWeight:800, color:darfCor, lineHeight:1 }}>
+                    {diasDarf < 0 ? '!' : diasDarf}
+                  </div>
+                  <div style={{ fontSize:10, color:'var(--muted)', marginTop:2 }}>
+                    {diasDarf < 0 ? 'VENCIDO' : 'dias'}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontWeight:700, color:'var(--text)', fontSize:14 }}>
+                    {diasDarf < 0
+                      ? 'DARF vencido — regularize o quanto antes'
+                      : diasDarf < 30
+                      ? 'DARF vence em breve — não deixe para última hora'
+                      : `DARF vence em ${fmtVenc(vencDarf)}`}
+                  </div>
+                  <div style={{ fontSize:12, color:'var(--muted)', marginTop:3 }}>
+                    Imposto devidos: <strong style={{color:darfCor}}>{fmtBRL(anoAtual?.imposto_brl)}</strong>
+                    {' · '}Declarar como "Aplicações financeiras no exterior"
+                  </div>
+                </div>
+              </div>
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize:12, borderColor:darfCor, color:darfCor }}
+                onClick={() => navigate(`/apuracao/anual/${anoSel}`)}>
+                Ver detalhes →
+              </button>
+            </div>
+          )}
+
+          {/* ── ROW 3: Gráficos ──────────────────────────────────────────── */}
+          {anoSelDesbloqueado && mesesDetalhe.length > 0 && (
+            <div style={{ display:'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap:16, marginBottom:16 }}>
+
+              {/* P&L mensal (barras) */}
               <div className="card">
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-                  <h3 style={{ fontSize:14, margin:0 }}>
-                    Resultado mensal — {anoSel}
-                  </h3>
+                  <h3 style={{ fontSize:14, margin:0 }}>Resultado mensal — {anoSel}</h3>
                   {anuais.length > 1 && (
-                    <div style={{ display:'flex', gap:6 }}>
-                      {anuais.map(a => (
+                    <div style={{ display:'flex', gap:4 }}>
+                      {[...anuais].sort((a,b) => a.ano - b.ano).map(a => (
                         <button key={a.ano}
                           onClick={() => setAnoSel(a.ano)}
                           className={`btn ${anoSel === a.ano ? 'btn-primary' : 'btn-ghost'}`}
-                          style={{ padding:'3px 10px', fontSize:11 }}>
+                          style={{ padding:'3px 9px', fontSize:11 }}>
                           {a.ano}
                         </button>
                       ))}
@@ -196,29 +341,127 @@ export default function Dashboard() {
                 ) : (
                   <ResponsiveContainer width="100%" height={160}>
                     <BarChart data={chartMensal} barSize={22}>
-                      <XAxis dataKey="name" tick={{ fill:'var(--muted)', fontSize:11 }} axisLine={false} tickLine={false} />
+                      <XAxis dataKey="name" tick={{ fill:'#8899aa', fontSize:11 }} axisLine={false} tickLine={false} />
                       <YAxis hide />
-                      <Tooltip
-                        contentStyle={{ background:'#1a2235', border:'1px solid rgba(255,255,255,0.12)', borderRadius:8, fontSize:12, color:'#e8edf5' }}
-                        formatter={(v) => [fmtBRL(v), 'Resultado']}
-                        labelStyle={{ color:'#8899aa' }}
-                        itemStyle={{ color:'#e8edf5' }}
-                      />
+                      <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [fmtBRL(v), 'Resultado']} />
                       <Bar dataKey="lucro" radius={[4,4,0,0]}>
                         {chartMensal.map((e, i) => (
-                          <Cell key={i} fill={e.lucro >= 0 ? 'var(--accent)' : 'var(--danger)'} />
+                          <Cell key={i} fill={e.lucro >= 0 ? '#00e5a0' : '#ff4d6d'} />
                         ))}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 )}
               </div>
-            )}
-          </div>
 
-          {/* TABELA ANUAL */}
+              {/* P&L acumulado (área) */}
+              <div className="card">
+                <h3 style={{ fontSize:14, marginBottom:16 }}>P&L acumulado — {anoSel}</h3>
+                {loadingMeses ? (
+                  <div style={{ height:160, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <span className="spinner" />
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={160}>
+                    <AreaChart data={chartCumulativo}>
+                      <defs>
+                        <linearGradient id="gradPos" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%"  stopColor="#00e5a0" stopOpacity={0.25} />
+                          <stop offset="95%" stopColor="#00e5a0" stopOpacity={0.02} />
+                        </linearGradient>
+                        <linearGradient id="gradNeg" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%"  stopColor="#ff4d6d" stopOpacity={0.25} />
+                          <stop offset="95%" stopColor="#ff4d6d" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis dataKey="name" tick={{ fill:'#8899aa', fontSize:11 }} axisLine={false} tickLine={false} />
+                      <YAxis hide />
+                      <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [fmtBRL(v), 'Acumulado']} />
+                      <Area
+                        type="monotone" dataKey="cumul" strokeWidth={2}
+                        stroke={chartCumulativo.length > 0 && chartCumulativo[chartCumulativo.length - 1].cumul >= 0 ? '#00e5a0' : '#ff4d6d'}
+                        fill={chartCumulativo.length > 0 && chartCumulativo[chartCumulativo.length - 1].cumul >= 0 ? 'url(#gradPos)' : 'url(#gradNeg)'}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+
+              {/* Donut: Depósito vs Lucro */}
+              {donutData.length > 0 && (
+                <div className="card">
+                  <h3 style={{ fontSize:14, marginBottom:4 }}>Composição do capital — {anoSel}</h3>
+                  <p style={{ fontSize:11, color:'var(--muted)', marginBottom:8 }}>
+                    Quanto do resultado veio de depósitos vs lucro de trading
+                  </p>
+                  <ResponsiveContainer width="100%" height={160}>
+                    <PieChart>
+                      <Pie
+                        data={donutData}
+                        cx="50%" cy="50%"
+                        innerRadius={44} outerRadius={68}
+                        paddingAngle={3}
+                        dataKey="value"
+                      >
+                        {donutData.map((e, i) => (
+                          <Cell key={i} fill={e.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        {...TOOLTIP_STYLE}
+                        formatter={(v, n) => [fmtBRL(v), n]}
+                      />
+                      <Legend
+                        iconType="circle" iconSize={8}
+                        formatter={(v) => <span style={{ color:'#8899aa', fontSize:11 }}>{v}</span>}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Imposto por ano (só se múltiplos anos) */}
+              {anuais.length > 1 && (
+                <div className="card">
+                  <h3 style={{ fontSize:14, marginBottom:16 }}>Imposto por ano</h3>
+                  <ResponsiveContainer width="100%" height={160}>
+                    <BarChart data={chartAnual} barSize={36}
+                      onClick={(d) => d?.activePayload && setAnoSel(d.activePayload[0]?.payload?.ano)}>
+                      <XAxis dataKey="name" tick={{ fill:'#8899aa', fontSize:12 }} axisLine={false} tickLine={false} />
+                      <YAxis hide />
+                      <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [fmtBRL(v), 'Imposto']} />
+                      <Bar dataKey="imposto" radius={[6,6,0,0]}>
+                        {chartAnual.map((e, i) => (
+                          <Cell key={i}
+                            fill={e.ano === anoSel ? '#00e5a0' : (e.imposto > 0 ? '#ffb347' : '#3ecf8e60')}
+                            opacity={e.ano === anoSel ? 1 : 0.7}
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                  <p style={{ fontSize:11, color:'var(--muted)', textAlign:'center', marginTop:8 }}>
+                    Clique em um ano para ver o detalhamento
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── ROW 4: Tabela anual ──────────────────────────────────────── */}
           <div className="card" style={{ overflowX:'auto' }}>
-            <h3 style={{ marginBottom:20, fontSize:15 }}>Histórico de apurações anuais</h3>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20, flexWrap:'wrap', gap:8 }}>
+              <h3 style={{ fontSize:15, margin:0 }}>Histórico de apurações anuais</h3>
+              {anoAtual?.desbloqueado && (
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize:12, display:'flex', alignItems:'center', gap:6, opacity: baixandoXlsx ? 0.7 : 1 }}
+                  onClick={() => baixarXlsx(anoSel)}
+                  disabled={baixandoXlsx}>
+                  {baixandoXlsx ? <><span className="spinner" style={{width:12,height:12}} /> Gerando...</> : '↓ Exportar Excel ' + anoSel}
+                </button>
+              )}
+            </div>
             <table className="tabela" style={{ minWidth:900 }}>
               <thead>
                 <tr>
@@ -341,7 +584,7 @@ function Empty({ navigate }) {
       <div style={{ fontSize:48, marginBottom:16 }}>📊</div>
       <h2 style={{ marginBottom:8 }}>Nenhuma apuração ainda</h2>
       <p style={{ color:'var(--muted)', marginBottom:32, maxWidth:400, margin:'0 auto 32px' }}>
-        Faça o upload do seu extrato da AvaTrade para calcular seu IR conforme a Lei 14.754/2023.
+        Faça o upload do seu extrato CSV da AvaTrade para calcular seu IR conforme a Lei 14.754/2023.
       </p>
       <button className="btn btn-primary" onClick={() => navigate('/upload')}>
         Fazer primeiro upload

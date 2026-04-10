@@ -348,6 +348,132 @@ def atualizar_ptax(
     return _mensal_to_dict(apuracao)
 
 
+@router.get("/anual/{ano}/xlsx")
+def download_xlsx(
+    ano: int,
+    db: Session = Depends(get_db),
+    usuario: User = Depends(get_current_user),
+):
+    """Exporta apuração anual como planilha Excel (.xlsx)."""
+    anual = db.query(ApuracaoAnual).filter_by(user_id=usuario.id, ano=ano).first()
+    if not anual:
+        raise HTTPException(404, "Apuração anual não encontrada.")
+    if not _is_desbloqueado(anual, usuario):
+        raise HTTPException(403, "Relatório bloqueado. Faça o upgrade para exportar.")
+
+    meses = (
+        db.query(Apuracao)
+        .filter_by(user_id=usuario.id, ano=ano)
+        .order_by(Apuracao.mes)
+        .all()
+    )
+
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        raise HTTPException(503, "Dependência de exportação não instalada.")
+
+    MESES_NOME = [
+        "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+        "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
+    ]
+    BG_DARK = "0A0E17"; BG_CARD = "131929"; BG_ALT = "1A2235"
+    GREEN   = "00E5A0"; RED = "FF4D6D";     WARN  = "FFB347"
+    TEXT    = "E8EDF5"; MUTED = "8899AA";   BLACK = "000000"
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f"DarfFX {ano}"
+
+    # Título
+    ws.merge_cells("A1:J1")
+    c = ws["A1"]
+    c.value = f"DarfFX — Apuração IR Forex {ano}  ·  Lei 14.754/2023  ·  Alíquota 15%"
+    c.font = Font(bold=True, color=GREEN, size=13, name="Calibri")
+    c.fill = PatternFill(start_color=BG_DARK, end_color=BG_DARK, fill_type="solid")
+    c.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 28
+
+    # Cabeçalho
+    headers = [
+        "Mês", "Ganhos (USD)", "Perdas (USD)", "Líquido (USD)",
+        "PTAX (R$)", "Líquido (BRL)", "Prej. Comp. (BRL)",
+        "Base IR (BRL)", "Alíquota", "Imposto (BRL)",
+    ]
+    for col, h in enumerate(headers, 1):
+        c = ws.cell(row=2, column=col, value=h)
+        c.font = Font(bold=True, color=BLACK, name="Calibri", size=10)
+        c.fill = PatternFill(start_color=GREEN, end_color=GREEN, fill_type="solid")
+        c.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[2].height = 22
+
+    # Dados mensais
+    for i, m in enumerate(meses, 3):
+        bg = BG_CARD if i % 2 == 1 else BG_ALT
+        fill = PatternFill(start_color=bg, end_color=bg, fill_type="solid")
+        ganho_usd = round(m.ganho_usd or 0, 2)
+        ganho_brl = round(m.ganho_brl or 0, 2)
+        imposto   = round(m.imposto_brl or 0, 2)
+
+        values = [
+            MESES_NOME[m.mes - 1],
+            round(m.ganhos_usd or 0, 2),
+            round(m.perdas_usd or 0, 2),
+            ganho_usd,
+            round(m.ptax or 0, 4),
+            ganho_brl,
+            round(m.carry_fwd_brl or 0, 2),
+            round(m.base_ir_brl or 0, 2),
+            f"{int((m.aliquota or 0.15) * 100)}%",
+            imposto,
+        ]
+        for col, val in enumerate(values, 1):
+            c = ws.cell(row=i, column=col, value=val)
+            c.fill = fill
+            if col == 4:
+                c.font = Font(color=(GREEN if ganho_usd >= 0 else RED), bold=True, name="Calibri", size=10)
+            elif col == 6:
+                c.font = Font(color=(GREEN if ganho_brl >= 0 else RED), bold=True, name="Calibri", size=10)
+            elif col == 10:
+                c.font = Font(color=(WARN if imposto > 0 else GREEN), bold=True, name="Calibri", size=10)
+            else:
+                c.font = Font(color=(TEXT if col == 1 else MUTED), name="Calibri", size=10)
+            c.alignment = Alignment(horizontal=("left" if col == 1 else "center"), vertical="center")
+
+    # Linha de totais
+    total_row = len(meses) + 3
+    ws.row_dimensions[total_row].height = 22
+    totals_fill = PatternFill(start_color=BG_DARK, end_color=BG_DARK, fill_type="solid")
+    totals = {
+        1: "TOTAL",
+        2: round(sum(m.ganhos_usd or 0 for m in meses), 2),
+        3: round(sum(m.perdas_usd or 0 for m in meses), 2),
+        4: round(sum(m.ganho_usd  or 0 for m in meses), 2),
+        6: round(sum(m.ganho_brl  or 0 for m in meses), 2),
+        10: round(anual.imposto_brl or 0, 2),
+    }
+    for col in range(1, 11):
+        c = ws.cell(row=total_row, column=col, value=totals.get(col, ""))
+        c.fill = totals_fill
+        c.font = Font(bold=True, color=GREEN, name="Calibri", size=10)
+        c.alignment = Alignment(horizontal=("left" if col == 1 else "center"), vertical="center")
+
+    # Largura das colunas
+    for i, w in enumerate([16, 14, 14, 14, 10, 14, 16, 14, 9, 14], 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=darffx_{ano}.xlsx"},
+    )
+
+
 @router.get("/{apuracao_id}/pdf")
 def download_pdf(
     apuracao_id: str,
