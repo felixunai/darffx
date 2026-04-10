@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
-  AreaChart, Area, PieChart, Pie, Legend,
+  AreaChart, Area, PieChart, Pie,
 } from 'recharts'
 import Layout from '../components/Layout'
 import api from '../api'
@@ -56,6 +56,13 @@ export default function Dashboard() {
   const [mesesDetalhe, setMesesDetalhe] = useState([])
   const [loadingMeses, setLoadingMeses] = useState(false)
   const [baixandoXlsx, setBaixandoXlsx] = useState(false)
+  const [mobile,       setMobile]       = useState(window.innerWidth <= 768)
+
+  useEffect(() => {
+    const onResize = () => setMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   useEffect(() => {
     api.get('/apuracao/anual/')
@@ -201,14 +208,22 @@ export default function Dashboard() {
 
   return (
     <Layout>
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:28 }}>
+      <div style={{
+        display:'flex',
+        alignItems: mobile ? 'flex-start' : 'center',
+        flexDirection: mobile ? 'column' : 'row',
+        justifyContent:'space-between',
+        marginBottom:28, gap:12,
+      }}>
         <div>
           <h1 style={{ fontSize:24, marginBottom:4 }}>Dashboard</h1>
           <p style={{ color:'var(--muted)', fontSize:13 }}>
             Apuração anual — Lei 14.754/2023 · 15% sobre lucro líquido anual
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => navigate('/upload')}>
+        <button className="btn btn-primary"
+          style={{ alignSelf: mobile ? 'stretch' : undefined }}
+          onClick={() => navigate('/upload')}>
           + Novo Extrato
         </button>
       </div>
@@ -241,7 +256,7 @@ export default function Dashboard() {
 
           {/* ── ROW 2: Insights do ano selecionado ──────────────────────── */}
           {mesesDetalhe.length > 0 && anoSelDesbloqueado && (
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:12, marginBottom:16 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(148px,1fr))', gap:12, marginBottom:16 }}>
               <CardInsight
                 icon="🏆"
                 label="Melhor mês"
@@ -315,7 +330,7 @@ export default function Dashboard() {
 
           {/* ── ROW 3: Gráficos ──────────────────────────────────────────── */}
           {anoSelDesbloqueado && mesesDetalhe.length > 0 && (
-            <div style={{ display:'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap:16, marginBottom:16 }}>
+            <div style={{ display:'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap:16, marginBottom:16 }}>
 
               {/* P&L mensal (barras) */}
               <div className="card">
@@ -390,16 +405,25 @@ export default function Dashboard() {
               {/* Donut: Depósito vs Lucro */}
               {donutData.length > 0 && (
                 <div className="card">
-                  <h3 style={{ fontSize:14, marginBottom:4 }}>Composição do capital — {anoSel}</h3>
-                  <p style={{ fontSize:11, color:'var(--muted)', marginBottom:8 }}>
-                    Quanto do resultado veio de depósitos vs lucro de trading
+                  <h3 style={{ fontSize:14, marginBottom:3 }}>Composição do capital — {anoSel}</h3>
+                  <p style={{ fontSize:11, color:'var(--muted)', marginBottom:4 }}>
+                    Depósitos vs lucro de trading
                   </p>
-                  <ResponsiveContainer width="100%" height={160}>
+                  {/* Legend HTML manual — evita recharts deslocar o centro e cortar o topo */}
+                  <div style={{ display:'flex', justifyContent:'center', gap:18, marginBottom:4 }}>
+                    {donutData.map((e) => (
+                      <div key={e.name} style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#8899aa' }}>
+                        <div style={{ width:8, height:8, borderRadius:'50%', background:e.color, flexShrink:0 }} />
+                        {e.name}
+                      </div>
+                    ))}
+                  </div>
+                  <ResponsiveContainer width="100%" height={155}>
                     <PieChart>
                       <Pie
                         data={donutData}
                         cx="50%" cy="50%"
-                        innerRadius={44} outerRadius={68}
+                        innerRadius={42} outerRadius={64}
                         paddingAngle={3}
                         dataKey="value"
                       >
@@ -407,14 +431,7 @@ export default function Dashboard() {
                           <Cell key={i} fill={e.color} />
                         ))}
                       </Pie>
-                      <Tooltip
-                        {...TOOLTIP_STYLE}
-                        formatter={(v, n) => [fmtBRL(v), n]}
-                      />
-                      <Legend
-                        iconType="circle" iconSize={8}
-                        formatter={(v) => <span style={{ color:'#8899aa', fontSize:11 }}>{v}</span>}
-                      />
+                      <Tooltip {...TOOLTIP_STYLE} formatter={(v, n) => [fmtBRL(v), n]} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
