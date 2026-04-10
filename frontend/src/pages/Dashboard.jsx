@@ -34,14 +34,27 @@ function CardStat({ label, valor, cor, sub }) {
   )
 }
 
-function CardInsight({ icon, label, valor, cor, sub }) {
+function CardInsight({ icon, label, valor, cor, sub, vertical }) {
   return (
-    <div className="card" style={{ display:'flex', gap:14, alignItems:'center', borderColor: cor ? `${cor}20` : undefined }}>
-      <div style={{ fontSize:28, flexShrink:0 }}>{icon}</div>
-      <div style={{ minWidth:0 }}>
-        <div style={{ fontSize:11, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:4 }}>{label}</div>
-        <div style={{ fontSize:17, fontFamily:'Syne', fontWeight:800, color: cor || 'var(--text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{valor}</div>
-        {sub && <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>{sub}</div>}
+    <div className="card" style={{
+      display:'flex',
+      flexDirection: vertical ? 'column' : 'row',
+      gap: vertical ? 8 : 14,
+      alignItems: vertical ? 'flex-start' : 'center',
+      borderColor: cor ? `${cor}20` : undefined,
+      padding: vertical ? '16px' : undefined,
+    }}>
+      <div style={{ fontSize: vertical ? 22 : 28, flexShrink:0 }}>{icon}</div>
+      <div style={{ minWidth:0, width:'100%' }}>
+        <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:3 }}>{label}</div>
+        <div style={{
+          fontSize: vertical ? 14 : 17,
+          fontFamily:'Syne', fontWeight:800,
+          color: cor || 'var(--text)',
+          wordBreak:'break-word',
+          lineHeight:1.2,
+        }}>{valor}</div>
+        {sub && <div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>{sub}</div>}
       </div>
     </div>
   )
@@ -256,13 +269,14 @@ export default function Dashboard() {
 
           {/* ── ROW 2: Insights do ano selecionado ──────────────────────── */}
           {mesesDetalhe.length > 0 && anoSelDesbloqueado && (
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(148px,1fr))', gap:12, marginBottom:16 }}>
+            <div style={{ display:'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(4,1fr)', gap:12, marginBottom:16 }}>
               <CardInsight
                 icon="🏆"
                 label="Melhor mês"
                 valor={melhorMes ? fmtBRL(melhorMes.ganho_brl) : '—'}
                 cor="var(--accent)"
                 sub={melhorMes ? `${MESES_CURTO[melhorMes.mes - 1]}/${melhorMes.ano || anoSel}` : undefined}
+                vertical={mobile}
               />
               <CardInsight
                 icon="📉"
@@ -270,13 +284,15 @@ export default function Dashboard() {
                 valor={piorMes ? fmtBRL(piorMes.ganho_brl) : '—'}
                 cor={piorMes && piorMes.ganho_brl < 0 ? 'var(--danger)' : 'var(--muted)'}
                 sub={piorMes ? `${MESES_CURTO[piorMes.mes - 1]}/${piorMes.ano || anoSel}` : undefined}
+                vertical={mobile}
               />
               <CardInsight
                 icon="🎯"
                 label="Meses lucrativos"
-                valor={`${mesesPositivos} de ${mesesDetalhe.length}`}
+                valor={`${mesesPositivos}/${mesesDetalhe.length}`}
                 cor="var(--accent)"
                 sub={`${taxaLucro}% de acerto`}
+                vertical={mobile}
               />
               <CardInsight
                 icon={streakPositivo ? '🔥' : '❄️'}
@@ -284,6 +300,7 @@ export default function Dashboard() {
                 valor={`${streak} ${streak === 1 ? 'mês' : 'meses'}`}
                 cor={streakPositivo ? 'var(--accent)' : 'var(--danger)'}
                 sub={streakPositivo ? 'positivos seguidos' : 'negativos seguidos'}
+                vertical={mobile}
               />
             </div>
           )}
@@ -293,12 +310,18 @@ export default function Dashboard() {
             <div style={{
               background: `rgba(${diasDarf < 30 ? '255,77,109' : diasDarf < 60 ? '255,179,71' : '0,229,160'},0.07)`,
               border:`1px solid ${darfCor}`,
-              borderRadius:14, padding:'16px 24px', marginBottom:16,
-              display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:12,
+              borderRadius:14,
+              padding: mobile ? '14px 16px' : '16px 24px',
+              marginBottom:16,
+              display:'flex',
+              flexDirection: mobile ? 'column' : 'row',
+              alignItems: mobile ? 'flex-start' : 'center',
+              justifyContent:'space-between',
+              gap:12,
             }}>
-              <div style={{ display:'flex', alignItems:'center', gap:14 }}>
-                <div style={{ textAlign:'center', minWidth:56 }}>
-                  <div style={{ fontSize:32, fontFamily:'Syne', fontWeight:800, color:darfCor, lineHeight:1 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                <div style={{ textAlign:'center', minWidth: mobile ? 44 : 56, flexShrink:0 }}>
+                  <div style={{ fontSize: mobile ? 26 : 32, fontFamily:'Syne', fontWeight:800, color:darfCor, lineHeight:1 }}>
                     {diasDarf < 0 ? '!' : diasDarf}
                   </div>
                   <div style={{ fontSize:10, color:'var(--muted)', marginTop:2 }}>
@@ -306,22 +329,22 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontWeight:700, color:'var(--text)', fontSize:14 }}>
+                  <div style={{ fontWeight:700, color:'var(--text)', fontSize: mobile ? 13 : 14 }}>
                     {diasDarf < 0
                       ? 'DARF vencido — regularize o quanto antes'
                       : diasDarf < 30
-                      ? 'DARF vence em breve — não deixe para última hora'
+                      ? 'DARF vence em breve'
                       : `DARF vence em ${fmtVenc(vencDarf)}`}
                   </div>
-                  <div style={{ fontSize:12, color:'var(--muted)', marginTop:3 }}>
-                    Imposto devidos: <strong style={{color:darfCor}}>{fmtBRL(anoAtual?.imposto_brl)}</strong>
-                    {' · '}Declarar como "Aplicações financeiras no exterior"
+                  <div style={{ fontSize:11, color:'var(--muted)', marginTop:3, lineHeight:1.5 }}>
+                    Imposto: <strong style={{color:darfCor}}>{fmtBRL(anoAtual?.imposto_brl)}</strong>
+                    {!mobile && <>{' · '}Declarar como "Aplicações financeiras no exterior"</>}
                   </div>
                 </div>
               </div>
               <button
                 className="btn btn-ghost"
-                style={{ fontSize:12, borderColor:darfCor, color:darfCor }}
+                style={{ fontSize:12, borderColor:darfCor, color:darfCor, width: mobile ? '100%' : undefined }}
                 onClick={() => navigate(`/apuracao/anual/${anoSel}`)}>
                 Ver detalhes →
               </button>
