@@ -7,7 +7,14 @@ from jose import jwt, JWTError
 from .config import settings
 from .models.database import Base, User, PromoConfig, ResetToken
 
-engine = create_engine(settings.DATABASE_URL)
+engine = create_engine(
+    settings.DATABASE_URL,
+    pool_size=10,          # conexões permanentes no pool
+    max_overflow=20,       # conexões extras sob pico (total máx: 30)
+    pool_timeout=30,       # segundos esperando conexão livre antes de erro
+    pool_recycle=1800,     # recria conexões a cada 30 min (evita conexão morta)
+    pool_pre_ping=True,    # testa conexão antes de usar (detecta quedas do banco)
+)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 ADMIN_EMAIL = "felixunai@gmail.com"

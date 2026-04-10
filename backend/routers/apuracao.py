@@ -13,8 +13,14 @@ Endpoints:
   DELETE /apuracao/{id}              — remove mês (permite reprocessar)
   DELETE /apuracao/anual/{ano}       — remove todo o ano
 """
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
+
+MAX_CSV_BYTES = 10 * 1024 * 1024  # 10 MB
 from sqlalchemy.orm import Session
 from datetime import datetime
 from collections import defaultdict
@@ -33,7 +39,9 @@ router = APIRouter(prefix="/apuracao", tags=["apuracao"])
 # ── UPLOAD ────────────────────────────────────────────────────────────────────
 
 @router.post("/upload")
+@limiter.limit("10/minute")
 async def upload_extrato(
+    request: Request,
     arquivo: UploadFile = File(...),
     db: Session = Depends(get_db),
     usuario: User = Depends(get_current_user),
@@ -44,6 +52,13 @@ async def upload_extrato(
     _verificar_plano(usuario, db)
 
     conteudo = await arquivo.read()
+
+    if len(conteudo) > MAX_CSV_BYTES:
+        raise HTTPException(413, "Arquivo muito grande. Tamanho máximo: 10 MB.")
+
+    if len(conteudo) == 0:
+        raise HTTPException(400, "Arquivo vazio.")
+
     try:
         operacoes = parse_csv_avatrade(BytesIO(conteudo))
     except Exception as e:
@@ -371,8 +386,8 @@ async def _buscar_ptax_com_cache(
 ) -> dict[tuple[int, int], float]:
     """
     Retorna PTAX para cada (mes, ano) usando cache do banco.
-    Apenas meses sem cache são consultados na API BCB — muito mais rápido
-    em reprocessamentos e uploads de PDFs com meses já conhecidos.
+    Apenas meses sem cache são consultados na API BCB.
+    Se o BCB estiver indisponível, usa o valor mais recente do cache como fallback.
     """
     resultado: dict[tuple[int, int], float] = {}
     sem_cache: list[tuple[int, int]] = []
@@ -391,6 +406,22 @@ async def _buscar_ptax_com_cache(
                 db.add(PtaxCache(mes=mes, ano=ano, ptax=ptax))
         db.commit()
         resultado.update(novos)
+
+    # Fallback: se BCB retornou 0 para algum mês, usa PTAX mais recente do cache
+    for mes, ano in meses_anos:
+        if not resultado.get((mes, ano)):
+            fallback = (
+                db.query(PtaxCache)
+                .order_by(PtaxCache.ano.desc(), PtaxCache.mes.desc())
+                .first()
+            )
+            if fallback:
+                print(
+                    f"[PTAX-FALLBACK] ({mes}/{ano}) BCB indisponível — "
+                    f"usando cache de {fallback.mes}/{fallback.ano}: {fallback.ptax}",
+                    flush=True,
+                )
+                resultado[(mes, ano)] = fallback.ptax
 
     return resultado
 
