@@ -213,19 +213,31 @@ export default function LandingPage() {
             <h2 style={{ fontSize: mobile ? '24px' : 'clamp(24px,4vw,40px)', fontFamily:'Syne' }}>Tudo que você precisa, em um só lugar</h2>
           </div>
 
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))', gap:20 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(240px,1fr))', gap:20 }}>
             {[
               { icon:'🏦', titulo:'PTAX automático', desc:'Busca a cotação oficial do Banco Central do Brasil para cada mês. Sem preocupação com câmbio manual.' },
               { icon:'⚖️', titulo:'Lei 14.754/2023', desc:'Cálculo 100% aderente à nova legislação: alíquota fixa 15%, apuração anual, sem isenção.' },
               { icon:'📉', titulo:'Compensação de prejuízos', desc:'Prejuízos de meses anteriores são automaticamente descontados da base tributável dentro do mesmo ano.' },
-              { icon:'📋', titulo:'Relatório para IRPF', desc:'Relatório completo com todas as informações para preencher sua declaração no IRPF. Plano pago.' },
-              { icon:'📅', titulo:'Breakdown mensal detalhado', desc:'Veja mês a mês: ganhos, perdas, resultado líquido em USD e BRL, PTAX e operações. Plano pago.' },
-              { icon:'📤', titulo:'Exportar PDF', desc:'Exporte o relatório completo em PDF para guardar ou enviar ao seu contador. Plano pago.' },
+              { icon:'📊', titulo:'Dashboard com gráficos', desc:'Visualize seu P&L mensal em barras, evolução acumulada e a composição do capital (depósitos vs lucro real).', destaque: true },
+              { icon:'🎯', titulo:'Insights de trading', desc:'Descubra seu melhor e pior mês, taxa de meses lucrativos e sequência atual de resultados positivos ou negativos.', destaque: true },
+              { icon:'⏰', titulo:'DARF countdown', desc:'Widget com contagem regressiva até o vencimento do imposto. Muda de cor conforme a urgência para você nunca perder o prazo.', destaque: true },
+              { icon:'📋', titulo:'Relatório para IRPF', desc:'Relatório completo com todas as informações para preencher sua declaração no programa IRPF. Plano pago.' },
+              { icon:'📤', titulo:'Exportar PDF e Excel', desc:'Exporte o relatório em PDF ou planilha Excel colorida para guardar ou enviar ao seu contador. Plano pago.', destaque: true },
             ].map((f) => (
               <div key={f.titulo} style={{
                 background:'var(--surface2)', borderRadius:12, padding:24,
-                border:'1px solid var(--border)',
+                border: f.destaque ? '1px solid rgba(0,229,160,0.35)' : '1px solid var(--border)',
+                position:'relative',
+                boxShadow: f.destaque ? '0 0 16px rgba(0,229,160,0.06)' : 'none',
               }}>
+                {f.destaque && (
+                  <div style={{
+                    position:'absolute', top:12, right:12,
+                    background:'rgba(0,229,160,0.15)', color:'var(--accent)',
+                    fontSize:10, fontWeight:700, letterSpacing:'0.8px',
+                    padding:'2px 8px', borderRadius:20,
+                  }}>NOVO</div>
+                )}
                 <div style={{ fontSize:32, marginBottom:12 }}>{f.icon}</div>
                 <h3 style={{ fontSize:15, marginBottom:8 }}>{f.titulo}</h3>
                 <p style={{ color:'var(--muted)', fontSize:13, lineHeight:1.7 }}>{f.desc}</p>
@@ -253,9 +265,10 @@ export default function LandingPage() {
             <div style={{ fontSize:42, fontFamily:'Syne', fontWeight:800, marginBottom:4 }}>R$ 0</div>
             <div style={{ color:'var(--muted)', fontSize:13, marginBottom:28 }}>sempre grátis</div>
             {[
-              '✓ Upload do extrato AvaTrade',
+              '✓ Upload do CSV AvaTrade',
               '✓ Até 2 meses de análise',
               '✓ Lucro estimado em USD e BRL',
+              '✗ Dashboard com gráficos (bloqueado)',
               '✗ Breakdown mensal detalhado (bloqueado)',
               '✗ Imposto calculado (bloqueado)',
               '✗ Relatório para IRPF (bloqueado)',
@@ -294,14 +307,26 @@ export default function LandingPage() {
             </div>
             <div style={{ color:'var(--muted)', fontSize:13, marginBottom:28 }}>pagamento único · válido até 31/12/{ANO}</div>
             {[
-              '✓ Processamento de meses ilimitados',
-              '✓ Cálculo oficial do imposto (15%)',
-              '✓ Breakdown mensal detalhado',
-              '✓ Compensação de prejuízos',
-              '✓ Relatório completo para IRPF',
-              '✓ Exportar PDF',
+              { label:'✓ Processamento de meses ilimitados' },
+              { label:'✓ Cálculo oficial do imposto (15%)' },
+              { label:'✓ Breakdown mensal detalhado' },
+              { label:'✓ Compensação de prejuízos' },
+              { label:'✓ Dashboard completo com gráficos', novo: true },
+              { label:'✓ Insights: melhor mês, taxa de acerto, sequência', novo: true },
+              { label:'✓ DARF countdown — nunca perca o prazo', novo: true },
+              { label:'✓ Relatório completo para IRPF' },
+              { label:'✓ Exportar PDF e Excel', novo: true },
             ].map((item) => (
-              <div key={item} style={{ fontSize:14, marginBottom:10, color:'var(--text)' }}>{item}</div>
+              <div key={item.label} style={{ fontSize:14, marginBottom:10, color:'var(--text)', display:'flex', alignItems:'center', gap:8 }}>
+                {item.label}
+                {item.novo && (
+                  <span style={{
+                    background:'rgba(0,229,160,0.15)', color:'var(--accent)',
+                    fontSize:10, fontWeight:700, letterSpacing:'0.8px',
+                    padding:'1px 7px', borderRadius:20, flexShrink:0,
+                  }}>NOVO</span>
+                )}
+              </div>
             ))}
             <button
               className="btn btn-primary"
