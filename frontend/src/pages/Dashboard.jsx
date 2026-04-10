@@ -401,7 +401,7 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height={160}>
-                    <AreaChart data={chartCumulativo}>
+                    <AreaChart data={chartCumulativo} margin={{ left:10, right:10, top:4 }}>
                       <defs>
                         <linearGradient id="gradPos" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%"  stopColor="#00e5a0" stopOpacity={0.25} />
