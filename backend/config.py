@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     BREVO_API_KEY: str = ""
     BREVO_FROM_EMAIL: str = ""  # ex: darffx.app@gmail.com (verificado no Brevo)
 
+    # Cron jobs — protegidos por secret
+    CRON_SECRET: str = ""  # definir no .env; chamadas sem o secret são rejeitadas
+
     # Preços em centavos (BRL)
     PRECO_ACESSO_CENTAVOS: int = 6990   # R$ 69,90 — acesso anual (expira 31/12 do ano vigente)
 

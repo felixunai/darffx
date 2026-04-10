@@ -474,6 +474,58 @@ def download_xlsx(
     )
 
 
+@router.get("/anual/{ano}/pares")
+def pares_por_ano(
+    ano: int,
+    db: Session = Depends(get_db),
+    usuario: User = Depends(get_current_user),
+):
+    """Retorna P&L agregado por instrumento/par para o ano selecionado."""
+    import re as _re
+    anual = db.query(ApuracaoAnual).filter_by(user_id=usuario.id, ano=ano).first()
+    if not anual:
+        raise HTTPException(404, "Apuração anual não encontrada.")
+    if not _is_desbloqueado(anual, usuario):
+        raise HTTPException(403, "Relatório bloqueado. Faça o upgrade para acessar.")
+
+    apuracoes = db.query(Apuracao).filter_by(user_id=usuario.id, ano=ano).all()
+    ids = [a.id for a in apuracoes]
+    if not ids:
+        return []
+
+    ops = (
+        db.query(Operacao)
+        .filter(Operacao.apuracao_id.in_(ids), Operacao.tipo == "CLOSED")
+        .all()
+    )
+
+    from collections import defaultdict
+    pares: dict = defaultdict(lambda: {"trades": 0, "lucro_usd": 0.0})
+    for op in ops:
+        par = _normalizar_par(op.descricao)
+        pares[par]["trades"] += 1
+        pares[par]["lucro_usd"] = round(pares[par]["lucro_usd"] + (op.valor_usd or 0.0), 2)
+
+    return sorted(
+        [{"par": k, **v} for k, v in pares.items()],
+        key=lambda x: x["lucro_usd"],
+        reverse=True,
+    )
+
+
+def _normalizar_par(descricao: str) -> str:
+    """Extrai nome do instrumento da descrição da AvaTrade."""
+    import re
+    if not descricao:
+        return "Outros"
+    d = descricao.strip()
+    # Remove prefixos buy/sell que eventualmente aparecem
+    d = re.sub(r'^(buy|sell|long|short)\s+', '', d, flags=re.IGNORECASE)
+    # Pega tudo antes de " @", " at " ou parênteses (nomes como "EUR/USD @ 1.08")
+    d = re.split(r'\s+@|\s+at\s+|\s*\(', d, flags=re.IGNORECASE)[0].strip()
+    return d[:30] if d else "Outros"
+
+
 @router.get("/{apuracao_id}/pdf")
 def download_pdf(
     apuracao_id: str,

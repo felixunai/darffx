@@ -129,6 +129,17 @@ class ResetToken(Base):
     user = relationship("User")
 
 
+class LembreteDarf(Base):
+    """Rastreia lembretes de vencimento DARF já enviados — evita duplicatas."""
+    __tablename__ = "lembretes_darf"
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    user_id    = Column(String, ForeignKey("users.id"), nullable=False)
+    ano        = Column(Integer, nullable=False)
+    tipo       = Column(String, nullable=False)   # "30" | "7" | "1"
+    enviado_em = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("user_id", "ano", "tipo", name="uq_lembrete_darf"),)
+
+
 class PtaxCache(Base):
     """Cache de cotações PTAX do Banco Central — evita chamadas repetidas à API BCB."""
     __tablename__ = "ptax_cache"

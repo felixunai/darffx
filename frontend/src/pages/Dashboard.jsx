@@ -70,6 +70,8 @@ export default function Dashboard() {
   const [loadingMeses, setLoadingMeses] = useState(false)
   const [baixandoXlsx, setBaixandoXlsx] = useState(false)
   const [mobile,       setMobile]       = useState(window.innerWidth <= 768)
+  const [pares,        setPares]        = useState([])
+  const [loadingPares, setLoadingPares] = useState(false)
 
   useEffect(() => {
     const onResize = () => setMobile(window.innerWidth <= 768)
@@ -120,9 +122,36 @@ export default function Dashboard() {
     }
   }, [])
 
+  const buscarPares = useCallback(async (ano) => {
+    setLoadingPares(true)
+    try {
+      const { data } = await api.get(`/apuracao/anual/${ano}/pares`)
+      setPares(data || [])
+    } catch {
+      setPares([])
+    } finally {
+      setLoadingPares(false)
+    }
+  }, [])
+
+  const marcarDarfPago = async (ano, pago) => {
+    try {
+      await api.patch(`/apuracao/anual/${ano}/${pago ? 'pago' : 'pendente'}`)
+      setAnuais(prev => prev.map(a => a.ano === ano ? { ...a, darf_pago: pago } : a))
+    } catch {
+      alert('Erro ao atualizar. Tente novamente.')
+    }
+  }
+
   useEffect(() => {
     if (anoSel) buscarMeses(anoSel)
   }, [anoSel, buscarMeses])
+
+  useEffect(() => {
+    const anual = anuais.find(a => a.ano === anoSel)
+    if (anoSel && anual?.desbloqueado) buscarPares(anoSel)
+    else setPares([])
+  }, [anoSel, anuais, buscarPares])
 
   const deletar = async (a) => {
     if (!window.confirm(`Excluir toda a apuração de ${a.ano}? Todos os meses serão removidos.`)) return
@@ -342,12 +371,20 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
-              <button
-                className="btn btn-ghost"
-                style={{ fontSize:12, borderColor:darfCor, color:darfCor, width: mobile ? '100%' : undefined }}
-                onClick={() => navigate(`/apuracao/anual/${anoSel}`)}>
-                Ver detalhes →
-              </button>
+              <div style={{ display:'flex', gap:8, width: mobile ? '100%' : undefined, flexWrap:'wrap' }}>
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize:12, borderColor:darfCor, color:darfCor, flex: mobile ? 1 : undefined }}
+                  onClick={() => navigate(`/apuracao/anual/${anoSel}`)}>
+                  Ver detalhes →
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize:12, borderColor:'var(--accent)', color:'var(--accent)', flex: mobile ? 1 : undefined }}
+                  onClick={() => marcarDarfPago(anoSel, true)}>
+                  ✓ Marcar como pago
+                </button>
+              </div>
             </div>
           )}
 
@@ -488,7 +525,76 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* ── ROW 4: Tabela anual ──────────────────────────────────────── */}
+          {/* ── ROW 4: Breakdown por par de moedas ──────────────────────── */}
+          {anoSelDesbloqueado && (pares.length > 0 || loadingPares) && (
+            <div className="card" style={{ marginBottom:16 }}>
+              <h3 style={{ fontSize:15, marginBottom:4 }}>Resultado por instrumento — {anoSel}</h3>
+              <p style={{ fontSize:12, color:'var(--muted)', marginBottom:16 }}>
+                P&L acumulado por par/ativo nas operações fechadas
+              </p>
+              {loadingPares ? (
+                <div style={{ height:80, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <span className="spinner" />
+                </div>
+              ) : (
+                <div style={{ display:'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap:24, alignItems:'start' }}>
+                  {/* Gráfico horizontal */}
+                  <div>
+                    {pares.slice(0, 10).map((p) => {
+                      const max = Math.max(...pares.slice(0,10).map(x => Math.abs(x.lucro_usd)), 1)
+                      const pct  = Math.round((Math.abs(p.lucro_usd) / max) * 100)
+                      const cor  = p.lucro_usd >= 0 ? 'var(--accent)' : 'var(--danger)'
+                      return (
+                        <div key={p.par} style={{ marginBottom:10 }}>
+                          <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4, fontSize:13 }}>
+                            <span style={{ fontWeight:600 }}>{p.par}</span>
+                            <span style={{ color:cor, fontWeight:700 }}>
+                              {p.lucro_usd >= 0 ? '+' : ''}{fmtUSD(p.lucro_usd)}
+                            </span>
+                          </div>
+                          <div style={{ height:6, background:'var(--surface2)', borderRadius:4, overflow:'hidden' }}>
+                            <div style={{
+                              height:'100%', width:`${pct}%`,
+                              background:cor, borderRadius:4,
+                              transition:'width 0.4s ease',
+                            }} />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {/* Tabela compacta */}
+                  <div style={{ overflowX:'auto' }}>
+                    <table className="tabela" style={{ fontSize:13 }}>
+                      <thead>
+                        <tr>
+                          <th>Instrumento</th>
+                          <th style={{ textAlign:'right' }}>Trades</th>
+                          <th style={{ textAlign:'right' }}>P&L (USD)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pares.map(p => (
+                          <tr key={p.par}>
+                            <td style={{ fontWeight:600 }}>{p.par}</td>
+                            <td style={{ textAlign:'right', color:'var(--muted)' }}>{p.trades}</td>
+                            <td style={{
+                              textAlign:'right', fontWeight:700,
+                              color: p.lucro_usd >= 0 ? 'var(--accent)' : 'var(--danger)',
+                            }}>
+                              {p.lucro_usd >= 0 ? '+' : ''}{fmtUSD(p.lucro_usd)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── ROW 5: Tabela anual ──────────────────────────────────────── */}
           <div className="card" style={{ overflowX:'auto' }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20, flexWrap:'wrap', gap:8 }}>
               <h3 style={{ fontSize:15, margin:0 }}>Histórico de apurações anuais</h3>
@@ -548,12 +654,28 @@ export default function Dashboard() {
                           {fmtBRL(a.imposto_brl)}
                         </td>
                         <td style={{ fontSize:12, color:'var(--muted)' }}>{fmtVenc(a.vencimento_darf)}</td>
-                        <td>
+                        <td onClick={e => e.stopPropagation()}>
                           {r2(a.imposto_brl) === 0
                             ? <span className="badge badge-green">Isento</span>
                             : a.darf_pago
-                              ? <span className="badge badge-blue">Pago</span>
-                              : <span className="badge badge-red">A pagar</span>
+                              ? (
+                                <button
+                                  className="badge badge-blue"
+                                  style={{ cursor:'pointer', border:'none' }}
+                                  title="Clique para marcar como pendente"
+                                  onClick={() => marcarDarfPago(a.ano, false)}>
+                                  ✓ Pago
+                                </button>
+                              )
+                              : (
+                                <button
+                                  className="badge badge-red"
+                                  style={{ cursor:'pointer', border:'none' }}
+                                  title="Clique para marcar como pago"
+                                  onClick={() => marcarDarfPago(a.ano, true)}>
+                                  A pagar
+                                </button>
+                              )
                           }
                         </td>
                       </>
