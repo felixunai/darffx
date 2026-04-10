@@ -521,7 +521,7 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height={160}>
-                    <AreaChart data={chartCumulativo} margin={{ left:10, right:10, top:4 }}>
+                    <AreaChart data={chartCumulativo} margin={{ left:4, right:10, top:4, bottom:0 }}>
                       <defs>
                         <linearGradient id="gradPos" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%"  stopColor="#00e5a0" stopOpacity={0.25} />
@@ -533,7 +533,13 @@ export default function Dashboard() {
                         </linearGradient>
                       </defs>
                       <XAxis dataKey="name" tick={{ fill:'#8899aa', fontSize:11 }} axisLine={false} tickLine={false} />
-                      <YAxis hide />
+                      <YAxis
+                        tickCount={4}
+                        tickFormatter={(v) => fmtCompactBRL(v)}
+                        tick={{ fill:'#8899aa', fontSize:9 }}
+                        axisLine={false} tickLine={false}
+                        width={54}
+                      />
                       <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [fmtBRL(v), 'Acumulado']} />
                       <Area
                         type="monotone" dataKey="cumul" strokeWidth={2}
@@ -627,7 +633,7 @@ export default function Dashboard() {
                 <div className="card">
                   <h3 style={{ fontSize:14, marginBottom:16 }}>P&L acumulado — todos os anos</h3>
                   <ResponsiveContainer width="100%" height={160}>
-                    <AreaChart data={chartMultiAno} margin={{ left:10, right:10, top:4 }}>
+                    <AreaChart data={chartMultiAno} margin={{ left:4, right:10, top:4, bottom:0 }}>
                       <defs>
                         <linearGradient id="gradMultiPos" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%"  stopColor="#00e5a0" stopOpacity={0.25} />
@@ -639,7 +645,13 @@ export default function Dashboard() {
                         </linearGradient>
                       </defs>
                       <XAxis dataKey="name" tick={{ fill:'#8899aa', fontSize:10 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                      <YAxis hide />
+                      <YAxis
+                        tickCount={4}
+                        tickFormatter={(v) => fmtCompactBRL(v)}
+                        tick={{ fill:'#8899aa', fontSize:9 }}
+                        axisLine={false} tickLine={false}
+                        width={54}
+                      />
                       <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [fmtBRL(v), 'Acumulado']} />
                       <Area type="monotone" dataKey="cumul" strokeWidth={2}
                         stroke={chartMultiAno.length > 0 && chartMultiAno[chartMultiAno.length - 1].cumul >= 0 ? '#00e5a0' : '#ff4d6d'}
