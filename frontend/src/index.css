@@ -235,7 +235,9 @@ input::placeholder { color: var(--muted); }
     transform: translateX(0);
   }
 
-  .main-content { padding: 16px; padding-top: 64px; }
+  .main-content { padding: 16px; padding-top: 64px; overflow-x: hidden; }
+  .card { padding: 16px; }
+  .layout { overflow-x: hidden; }
 }
 
 @media print {

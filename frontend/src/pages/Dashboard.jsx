@@ -570,7 +570,7 @@ export default function Dashboard() {
           )}
 
           {/* ── ROW 4: Tabela anual ──────────────────────────────────────── */}
-          <div className="card" style={{ overflowX:'auto' }}>
+          <div className="card" style={{ overflowX:'auto', maxWidth:'100%', minWidth:0 }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20, flexWrap:'wrap', gap:8 }}>
               <h3 style={{ fontSize:15, margin:0 }}>Histórico de apurações anuais</h3>
               {anoAtual?.desbloqueado && (
@@ -704,10 +704,8 @@ export default function Dashboard() {
           </div>
 
           <div style={{ marginTop:16, padding:'12px 16px', background:'var(--surface)', borderRadius:12,
-            border:'1px solid var(--border)', fontSize:12, color:'var(--muted)' }}>
-            📋 <strong style={{color:'var(--text)'}}>Lei 14.754/2023</strong> — Apuração anual ·
-            Alíquota fixa 15% · Sem isenção · Compensação de prejuízos entre anos ·
-            Declarar como "Aplicações financeiras no exterior" no IRPF
+            border:'1px solid var(--border)', fontSize:12, color:'var(--muted)', lineHeight:1.7 }}>
+            📋 <strong style={{color:'var(--text)'}}>Lei 14.754/2023</strong> — Apuração anual · Alíquota fixa 15% · Sem isenção · Compensação de prejuízos entre anos · Declarar como "Aplicações financeiras no exterior" no IRPF
           </div>
         </>
       )}
