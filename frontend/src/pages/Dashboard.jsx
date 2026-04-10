@@ -24,12 +24,17 @@ const TOOLTIP_STYLE = {
   itemStyle: { color:'#e8edf5' },
 }
 
-function CardStat({ label, valor, cor, sub }) {
+function CardStat({ label, valor, cor, sub, mobile }) {
   return (
-    <div className="card" style={{ borderColor: cor ? `${cor}30` : undefined }}>
-      <div style={{ fontSize:11, color:'var(--muted)', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.5px' }}>{label}</div>
-      <div style={{ fontSize:21, fontFamily:'Syne', fontWeight:800, color: cor || 'var(--text)', lineHeight:1.2 }}>{valor}</div>
-      {sub && <div style={{ fontSize:11, color:'var(--muted)', marginTop:5 }}>{sub}</div>}
+    <div className="card" style={{ borderColor: cor ? `${cor}30` : undefined, padding: mobile ? '14px' : undefined }}>
+      <div style={{ fontSize:10, color:'var(--muted)', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.5px' }}>{label}</div>
+      <div style={{
+        fontSize: mobile ? 14 : 21,
+        fontFamily:'Syne', fontWeight:800,
+        color: cor || 'var(--text)', lineHeight:1.2,
+        overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+      }}>{valor}</div>
+      {sub && <div style={{ fontSize:10, color:'var(--muted)', marginTop:4 }}>{sub}</div>}
     </div>
   )
 }
@@ -218,6 +223,18 @@ export default function Dashboard() {
     locked:  !a.desbloqueado,
   }))
 
+  // ── Rentabilidade ─────────────────────────────────────────────────────────
+  const rentBase     = depositosBRL > 0 ? depositosBRL : null
+  const rentAnual    = rentBase && anoAtual ? r2((r2(anoAtual.lucro_brl) / rentBase) * 100) : null
+  const rentMedia    = rentAnual !== null && mesesDetalhe.length > 0
+    ? r2(rentAnual / mesesDetalhe.length) : null
+  const rentMensal   = mesesOrdenados.map(m => ({
+    nome: MESES_CURTO[m.mes - 1],
+    pct:  rentBase ? r2((r2(m.ganho_brl) / rentBase) * 100) : 0,
+  }))
+  const rentMaxAbs   = rentMensal.length > 0
+    ? Math.max(...rentMensal.map(m => Math.abs(m.pct)), 0.01) : 1
+
   // ── DARF countdown ────────────────────────────────────────────────────────
   const vencDarf   = anoAtual?.vencimento_darf
   const diasDarf   = vencDarf ? Math.ceil((new Date(vencDarf) - new Date()) / 86400000) : null
@@ -258,21 +275,24 @@ export default function Dashboard() {
         <>
           {/* ── ROW 1: Stats principais ─────────────────────────────────── */}
           <div className="grid-4" style={{ marginBottom:16 }}>
-            <CardStat label="Anos apurados" valor={anuais.length} />
+            <CardStat label="Anos apurados" valor={anuais.length} mobile={mobile} />
             <CardStat
               label="Lucro total (BRL)"
               valor={fmtBRL(totalLucro)}
               cor={totalLucro >= 0 ? 'var(--accent)' : 'var(--danger)'}
+              mobile={mobile}
             />
             <CardStat
               label="Imposto total"
               valor={desbloqueados.length > 0 ? fmtBRL(totalImposto) : '🔒 Bloqueado'}
               cor="var(--warn)"
+              mobile={mobile}
             />
             <CardStat
               label="Imposto a pagar"
               valor={desbloqueados.length > 0 ? fmtBRL(impostoPendente) : '—'}
               cor={impostoPendente > 0 ? 'var(--danger)' : undefined}
+              mobile={mobile}
             />
           </div>
 
@@ -474,6 +494,49 @@ export default function Dashboard() {
                       <Tooltip {...TOOLTIP_STYLE} formatter={(v, n) => [fmtBRL(v), n]} />
                     </PieChart>
                   </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Rentabilidade */}
+              {rentAnual !== null && rentMensal.length > 0 && (
+                <div className="card">
+                  <h3 style={{ fontSize:14, marginBottom:2 }}>Rentabilidade — {anoSel}</h3>
+                  <p style={{ fontSize:11, color:'var(--muted)', marginBottom:14 }}>
+                    Sobre capital depositado ({fmtBRL(rentBase)})
+                  </p>
+                  {/* Números principais */}
+                  <div style={{ display:'flex', gap:16, marginBottom:16 }}>
+                    <div style={{ flex:1, background:'var(--surface2)', borderRadius:10, padding:'12px 14px' }}>
+                      <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:4 }}>Anual</div>
+                      <div style={{ fontSize:22, fontFamily:'Syne', fontWeight:800, color: rentAnual >= 0 ? 'var(--accent)' : 'var(--danger)', lineHeight:1 }}>
+                        {rentAnual >= 0 ? '+' : ''}{rentAnual.toLocaleString('pt-BR', { minimumFractionDigits:1, maximumFractionDigits:1 })}%
+                      </div>
+                    </div>
+                    <div style={{ flex:1, background:'var(--surface2)', borderRadius:10, padding:'12px 14px' }}>
+                      <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:4 }}>Média/mês</div>
+                      <div style={{ fontSize:22, fontFamily:'Syne', fontWeight:800, color: rentMedia >= 0 ? 'var(--accent)' : 'var(--danger)', lineHeight:1 }}>
+                        {rentMedia >= 0 ? '+' : ''}{rentMedia?.toLocaleString('pt-BR', { minimumFractionDigits:1, maximumFractionDigits:1 })}%
+                      </div>
+                    </div>
+                  </div>
+                  {/* Barras mensais */}
+                  <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                    {rentMensal.map(({ nome, pct }) => {
+                      const cor = pct >= 0 ? 'var(--accent)' : 'var(--danger)'
+                      const largura = `${Math.round((Math.abs(pct) / rentMaxAbs) * 100)}%`
+                      return (
+                        <div key={nome} style={{ display:'flex', alignItems:'center', gap:8 }}>
+                          <div style={{ width:28, fontSize:10, color:'var(--muted)', flexShrink:0 }}>{nome}</div>
+                          <div style={{ flex:1, height:6, background:'var(--surface2)', borderRadius:4, overflow:'hidden' }}>
+                            <div style={{ height:'100%', width:largura, background:cor, borderRadius:4, transition:'width 0.3s ease' }} />
+                          </div>
+                          <div style={{ width:50, fontSize:11, color:cor, fontWeight:700, textAlign:'right', flexShrink:0 }}>
+                            {pct >= 0 ? '+' : ''}{pct.toLocaleString('pt-BR', { minimumFractionDigits:1, maximumFractionDigits:1 })}%
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               )}
 
