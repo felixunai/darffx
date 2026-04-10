@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
   AreaChart, Area, PieChart, Pie,
 } from 'recharts'
 import Layout from '../components/Layout'
@@ -16,6 +16,14 @@ const fmtVenc = (iso) => {
   if (!iso) return '—'
   const [y, m, d] = iso.split('-')
   return `${d}/${m}/${y}`
+}
+
+const fmtCompact = (v) => {
+  if (v === null || v === undefined) return ''
+  const abs = Math.abs(v)
+  const sign = v >= 0 ? '+' : '-'
+  if (abs >= 1000) return `${sign}${(abs / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}k`
+  return `${sign}${abs.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`
 }
 
 const TOOLTIP_STYLE = {
@@ -73,8 +81,9 @@ export default function Dashboard() {
   const [anoSel,       setAnoSel]       = useState(null)
   const [mesesDetalhe, setMesesDetalhe] = useState([])
   const [loadingMeses, setLoadingMeses] = useState(false)
-  const [baixandoXlsx, setBaixandoXlsx] = useState(false)
-  const [mobile,       setMobile]       = useState(window.innerWidth <= 768)
+  const [baixandoXlsx,  setBaixandoXlsx]  = useState(false)
+  const [mobile,        setMobile]        = useState(window.innerWidth <= 768)
+  const [todosOsMeses,  setTodosOsMeses]  = useState([])
 
   useEffect(() => {
     const onResize = () => setMobile(window.innerWidth <= 768)
@@ -136,10 +145,18 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (anoSel) {
-      setMesesDetalhe([])   // limpa imediatamente para evitar flash de dados do ano anterior
+      setMesesDetalhe([])
       buscarMeses(anoSel)
     }
   }, [anoSel, buscarMeses])
+
+  useEffect(() => {
+    if (anuais.length > 1) {
+      api.get('/apuracao/meses/todos')
+        .then(r => setTodosOsMeses(r.data || []))
+        .catch(() => setTodosOsMeses([]))
+    }
+  }, [anuais.length])
 
   const deletar = async (a) => {
     if (!window.confirm(`Excluir toda a apuração de ${a.ano}? Todos os meses serão removidos.`)) return
@@ -236,6 +253,16 @@ export default function Dashboard() {
     locked:  !a.desbloqueado,
   }))
 
+  // ── Gráfico: P&L acumulado multi-ano ─────────────────────────────────────
+  const chartMultiAno = todosOsMeses.reduce((acc, m) => {
+    const prev = acc.length > 0 ? acc[acc.length - 1].cumul : 0
+    acc.push({
+      name:  `${MESES_CURTO[m.mes - 1]}/${String(m.ano).slice(2)}`,
+      cumul: r2(prev + m.ganho_brl),
+    })
+    return acc
+  }, [])
+
   // ── Rentabilidade ─────────────────────────────────────────────────────────
   const rentBase     = depositosBRL > 0 ? depositosBRL : null
   const rentAnual    = rentBase && anoAtual ? r2((r2(anoAtual.lucro_brl) / rentBase) * 100) : null
@@ -313,7 +340,7 @@ export default function Dashboard() {
           <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, letterSpacing:'1px', marginBottom:10, marginTop:4 }}>
             DESDE O INÍCIO · {anuais.length} {anuais.length === 1 ? 'ANO' : 'ANOS'} REGISTRADO{anuais.length !== 1 ? 'S' : ''}
           </div>
-          <div style={{ display:'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(3,1fr)', gap:12, marginBottom:24 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:24 }}>
             {/* Capital líquido */}
             <div className="card" style={{ borderColor:'rgba(0,149,255,0.25)', padding: mobile ? 14 : undefined }}>
               <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:6 }}>Capital líquido</div>
@@ -321,26 +348,13 @@ export default function Dashboard() {
                 {fmtUSD(capitalLiqUSD)}
               </div>
               <div style={{ fontSize:10, color:'var(--muted)', marginTop:5, lineHeight:1.6 }}>
-                +{fmtUSD(totalDepositos)} dep.<br/>
-                {totalSaques > 0 ? `-${fmtUSD(totalSaques)} saq.` : 'sem saques'}
-              </div>
-            </div>
-
-            {/* P&L total */}
-            <div className="card" style={{ borderColor: totalLucro >= 0 ? 'rgba(0,229,160,0.25)' : 'rgba(255,77,109,0.25)', padding: mobile ? 14 : undefined }}>
-              <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:6 }}>P&L total</div>
-              <div style={{ fontSize: mobile ? 14 : 19, fontFamily:'Syne', fontWeight:800, color: totalLucro >= 0 ? 'var(--accent)' : 'var(--danger)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                {fmtBRL(totalLucro)}
-              </div>
-              <div style={{ fontSize:10, color:'var(--muted)', marginTop:5 }}>
-                {totalLucroUSD >= 0 ? '+' : ''}{fmtUSD(totalLucroUSD)} em USD
+                +{fmtUSD(totalDepositos)} dep.{totalSaques > 0 ? ` · -${fmtUSD(totalSaques)} saq.` : ''}
               </div>
             </div>
 
             {/* Rentabilidade total */}
             <div className="card" style={{
               borderColor: rentTotal !== null ? (rentTotal >= 0 ? 'rgba(0,229,160,0.25)' : 'rgba(255,77,109,0.25)') : undefined,
-              gridColumn: mobile ? 'span 2' : undefined,
               padding: mobile ? 14 : undefined,
             }}>
               <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:6 }}>Rentabilidade total</div>
@@ -478,6 +492,9 @@ export default function Dashboard() {
                       <YAxis hide />
                       <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [fmtBRL(v), 'Resultado']} />
                       <Bar dataKey="lucro" radius={[4,4,0,0]}>
+                        <LabelList dataKey="lucro" position="top"
+                          formatter={fmtCompact}
+                          style={{ fontSize:9, fill:'#8899aa' }} />
                         {chartMensal.map((e, i) => (
                           <Cell key={i} fill={e.lucro >= 0 ? '#00e5a0' : '#ff4d6d'} />
                         ))}
@@ -596,6 +613,34 @@ export default function Dashboard() {
                 </div>
               )}
 
+              {/* P&L acumulado multi-ano (Sprint B) */}
+              {anuais.length > 1 && chartMultiAno.length > 0 && (
+                <div className="card">
+                  <h3 style={{ fontSize:14, marginBottom:16 }}>P&L acumulado — todos os anos</h3>
+                  <ResponsiveContainer width="100%" height={160}>
+                    <AreaChart data={chartMultiAno} margin={{ left:10, right:10, top:4 }}>
+                      <defs>
+                        <linearGradient id="gradMultiPos" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%"  stopColor="#00e5a0" stopOpacity={0.25} />
+                          <stop offset="95%" stopColor="#00e5a0" stopOpacity={0.02} />
+                        </linearGradient>
+                        <linearGradient id="gradMultiNeg" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%"  stopColor="#ff4d6d" stopOpacity={0.25} />
+                          <stop offset="95%" stopColor="#ff4d6d" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis dataKey="name" tick={{ fill:'#8899aa', fontSize:10 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                      <YAxis hide />
+                      <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [fmtBRL(v), 'Acumulado']} />
+                      <Area type="monotone" dataKey="cumul" strokeWidth={2}
+                        stroke={chartMultiAno.length > 0 && chartMultiAno[chartMultiAno.length - 1].cumul >= 0 ? '#00e5a0' : '#ff4d6d'}
+                        fill={chartMultiAno.length > 0 && chartMultiAno[chartMultiAno.length - 1].cumul >= 0 ? 'url(#gradMultiPos)' : 'url(#gradMultiNeg)'}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
               {/* Rentabilidade % por ano (só se múltiplos anos) */}
               {anuais.length > 1 && chartRentAnual.some(d => d.rent !== null) && (
                 <div className="card">
@@ -611,6 +656,9 @@ export default function Dashboard() {
                         formatter={(v) => v === null ? ['—', 'Rentabilidade'] : [`${v >= 0 ? '+' : ''}${v?.toLocaleString('pt-BR', { minimumFractionDigits:1, maximumFractionDigits:1 })}%`, 'Rentabilidade']}
                       />
                       <Bar dataKey="rent" radius={[6,6,0,0]}>
+                        <LabelList dataKey="rent" position="top"
+                          formatter={(v) => v === null ? '' : `${v >= 0 ? '+' : ''}${v?.toLocaleString('pt-BR', { minimumFractionDigits:1, maximumFractionDigits:1 })}%`}
+                          style={{ fontSize:10, fill:'#8899aa' }} />
                         {chartRentAnual.map((e, i) => (
                           <Cell key={i}
                             fill={e.rent === null ? '#3ecf8e40' : e.rent >= 0 ? '#00e5a0' : '#ff4d6d'}
@@ -637,6 +685,9 @@ export default function Dashboard() {
                       <YAxis hide />
                       <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [fmtBRL(v), 'Imposto']} />
                       <Bar dataKey="imposto" radius={[6,6,0,0]}>
+                        <LabelList dataKey="imposto" position="top"
+                          formatter={(v) => v > 0 ? fmtCompact(v) : ''}
+                          style={{ fontSize:10, fill:'#8899aa' }} />
                         {chartAnual.map((e, i) => (
                           <Cell key={i}
                             fill={e.ano === anoSel ? '#00e5a0' : (e.imposto > 0 ? '#ffb347' : '#3ecf8e60')}

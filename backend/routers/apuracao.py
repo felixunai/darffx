@@ -189,6 +189,21 @@ async def upload_extrato(
 
 # ── LISTAGEM ANUAL ────────────────────────────────────────────────────────────
 
+@router.get("/meses/todos")
+def todos_os_meses(
+    db: Session = Depends(get_db),
+    usuario: User = Depends(get_current_user),
+):
+    """Todos os meses de todos os anos, em ordem cronológica — para gráfico multi-ano."""
+    meses = (
+        db.query(Apuracao)
+        .filter_by(user_id=usuario.id)
+        .order_by(Apuracao.ano, Apuracao.mes)
+        .all()
+    )
+    return [_mensal_to_dict(m) for m in meses]
+
+
 @router.get("/anual/")
 def listar_anuais(
     db: Session = Depends(get_db),
