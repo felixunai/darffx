@@ -220,7 +220,9 @@ export default function LandingPage() {
               { icon:'📉', titulo:'Compensação de prejuízos', desc:'Prejuízos de meses anteriores são automaticamente descontados da base tributável dentro do mesmo ano.' },
               { icon:'📊', titulo:'Dashboard com gráficos', desc:'Visualize seu P&L mensal em barras, evolução acumulada e a composição do capital (depósitos vs lucro real).', destaque: true },
               { icon:'🎯', titulo:'Insights de trading', desc:'Descubra seu melhor e pior mês, taxa de meses lucrativos e sequência atual de resultados positivos ou negativos.', destaque: true },
-              { icon:'⏰', titulo:'DARF countdown', desc:'Widget com contagem regressiva até o vencimento do imposto. Muda de cor conforme a urgência para você nunca perder o prazo.', destaque: true },
+              { icon:'📈', titulo:'Rentabilidade mensal e anual', desc:'Veja o percentual de retorno sobre seu capital depositado, mês a mês e no acumulado do ano, com barras visuais por período.', destaque: true },
+              { icon:'⏰', titulo:'DARF countdown + lembrete', desc:'Contador regressivo até o vencimento que muda de cor conforme a urgência. Receba e-mails automáticos 30, 7 e 1 dia antes.', destaque: true },
+              { icon:'✅', titulo:'Marcar DARF como pago', desc:'Confirme o pagamento diretamente no dashboard. O alerta de urgência some e o status fica registrado para seu controle.', destaque: true },
               { icon:'📋', titulo:'Relatório para IRPF', desc:'Relatório completo com todas as informações para preencher sua declaração no programa IRPF. Plano pago.' },
               { icon:'📤', titulo:'Exportar PDF e Excel', desc:'Exporte o relatório em PDF ou planilha Excel colorida para guardar ou enviar ao seu contador. Plano pago.', destaque: true },
             ].map((f) => (
@@ -313,7 +315,9 @@ export default function LandingPage() {
               { label:'✓ Compensação de prejuízos' },
               { label:'✓ Dashboard completo com gráficos', novo: true },
               { label:'✓ Insights: melhor mês, taxa de acerto, sequência', novo: true },
-              { label:'✓ DARF countdown — nunca perca o prazo', novo: true },
+              { label:'✓ Rentabilidade mensal e anual', novo: true },
+              { label:'✓ DARF countdown com lembretes por e-mail', novo: true },
+              { label:'✓ Marcar DARF como pago', novo: true },
               { label:'✓ Relatório completo para IRPF' },
               { label:'✓ Exportar PDF e Excel', novo: true },
             ].map((item) => (
