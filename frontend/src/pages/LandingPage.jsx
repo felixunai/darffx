@@ -21,6 +21,18 @@ export default function LandingPage() {
 
   return (
     <div style={{ background:'var(--bg)', color:'var(--text)', fontFamily:'DM Sans, sans-serif', overflowX:'hidden' }}>
+
+      {/* AVISO LEGAL — TOPO */}
+      <div style={{
+        background:'rgba(0,149,255,0.08)', borderBottom:'1px solid rgba(0,149,255,0.2)',
+        padding:'10px 24px', textAlign:'center',
+        fontSize:12, color:'var(--muted)', lineHeight:1.6,
+      }}>
+        <strong style={{color:'var(--text)'}}>Aviso:</strong> O DarfFX é uma ferramenta independente, sem vínculo com a Receita Federal,
+        o Banco Central ou qualquer órgão governamental. Os resultados são estimativas baseadas nos dados fornecidos pelo usuário
+        e não substituem a orientação de um contador ou consultor tributário.
+      </div>
+
       {/* NAV */}
       <nav style={{
         position:'sticky', top:0, zIndex:100,
@@ -64,29 +76,30 @@ export default function LandingPage() {
           fontFamily:'Syne', fontWeight:800,
           lineHeight:1.1, marginBottom:24, maxWidth:820,
         }}>
-          Declare seu IR do Forex{' '}
+          Apure o IR do seu Forex{' '}
           <span style={{
             background:'linear-gradient(90deg, var(--accent), #0095ff)',
             WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent',
           }}>
-            com precisão
+            de forma organizada
           </span>
-          {' '}e sem estresse
+          {' '}e sem complicação
         </h1>
 
         <p style={{
           fontSize: mobile ? '16px' : 'clamp(16px,2vw,20px)',
           color:'var(--muted)', maxWidth:560, lineHeight:1.7, marginBottom:40,
         }}>
-          O DarfFX calcula automaticamente seu imposto de renda sobre operações
-          de Forex da AvaTrade, aplicando a Lei 14.754/2023 com PTAX oficial do
-          Banco Central. Copie o extrato, cole no Excel ou Google Planilhas, salve como CSV e pronto.
+          O DarfFX auxilia na apuração do imposto de renda sobre operações de Forex da AvaTrade,
+          seguindo as diretrizes da Lei 14.754/2023 e utilizando a cotação PTAX com base em
+          dados públicos do Banco Central. Copie o extrato, cole no Excel ou Google Planilhas,
+          salve como CSV e pronto.
         </p>
 
         <div style={{ display:'flex', gap:12, flexWrap:'wrap', justifyContent:'center', marginBottom:56 }}>
           <button className="btn btn-primary" style={{ padding:'14px 32px', fontSize:16, borderRadius:12 }}
             onClick={() => navigate('/register')}>
-            Calcular meu IR agora →
+            Estimar meu IR agora →
           </button>
           {!mobile && (
             <button className="btn btn-ghost" style={{ padding:'14px 32px', fontSize:16, borderRadius:12 }}
@@ -100,8 +113,8 @@ export default function LandingPage() {
         <div style={{ display:'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(4,auto)', gap: mobile ? '20px 32px' : 40, justifyContent:'center' }}>
           {[
             ['15%', 'Alíquota fixa flat'],
-            ['PTAX', 'Banco Central automático'],
-            ['Lei 14.754', 'Compliance total'],
+            ['PTAX', 'Dados públicos do BCB'],
+            ['Lei 14.754', 'Base da apuração'],
             ['CSV', 'Upload simples via planilha'],
           ].map(([v, l]) => (
             <div key={l} style={{ textAlign:'center' }}>
@@ -124,7 +137,7 @@ export default function LandingPage() {
               ATENÇÃO · NOVA LEGISLAÇÃO
             </div>
             <h2 style={{ fontSize: mobile ? '24px' : 'clamp(24px,4vw,36px)', fontFamily:'Syne', marginBottom:16 }}>
-              A Lei 14.754/2023 mudou tudo para traders Forex
+              A Lei 14.754/2023 mudou as regras para traders Forex
             </h2>
             <p style={{ color:'var(--muted)', fontSize:15, lineHeight:1.8, marginBottom:16 }}>
               A partir de <strong style={{color:'var(--text)'}}>janeiro de 2024</strong>, todas as aplicações financeiras
@@ -132,9 +145,9 @@ export default function LandingPage() {
               <strong style={{color:'var(--accent)'}}> alíquota fixa de 15%</strong>, sem a isenção de R$20.000.
             </p>
             <p style={{ color:'var(--muted)', fontSize:15, lineHeight:1.8 }}>
-              Isso significa que você precisa calcular seu lucro anual em reais usando a
-              cotação PTAX do Banco Central, compensar prejuízos de meses anteriores e
-              declarar como "Aplicações financeiras no exterior" no IRPF.
+              Isso significa que você precisa apurar seu lucro anual em reais usando a
+              cotação PTAX com base em dados públicos do Banco Central, compensar prejuízos
+              de meses anteriores e declarar como "Aplicações financeiras no exterior" no IRPF.
             </p>
           </div>
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
@@ -176,12 +189,12 @@ export default function LandingPage() {
             {
               num: '02', icon: '⚡',
               titulo: 'Faça o upload do CSV',
-              desc: 'Envie o arquivo CSV para o DarfFX. Em segundos lemos cada operação, buscamos a PTAX oficial do Banco Central e calculamos seu IR seguindo a Lei 14.754/2023.',
+              desc: 'Envie o arquivo CSV para o DarfFX. Em segundos lemos cada operação, consultamos a cotação PTAX com base em dados públicos do Banco Central e calculamos a estimativa de IR seguindo as diretrizes da Lei 14.754/2023.',
             },
             {
               num: '03', icon: '📊',
               titulo: 'Relatório pronto para o IRPF',
-              desc: 'Receba o imposto anual (IRPF) e o relatório completo pronto para declarar. Disponível no Acesso Completo.',
+              desc: 'Receba a estimativa do imposto anual (IRPF) e o relatório completo para auxiliar na sua declaração. Disponível no Acesso Completo.',
             },
           ].map((s) => (
             <div key={s.num} style={{
@@ -215,14 +228,14 @@ export default function LandingPage() {
 
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(240px,1fr))', gap:20 }}>
             {[
-              { icon:'🏦', titulo:'PTAX automático', desc:'Busca a cotação oficial do Banco Central do Brasil para cada mês. Sem preocupação com câmbio manual.' },
-              { icon:'⚖️', titulo:'Lei 14.754/2023', desc:'Cálculo 100% aderente à nova legislação: alíquota fixa 15%, apuração anual, sem isenção.' },
+              { icon:'🏦', titulo:'PTAX automático', desc:'Consulta a cotação PTAX com base em dados públicos do Banco Central do Brasil para cada mês. Sem preocupação com câmbio manual.' },
+              { icon:'⚖️', titulo:'Desenvolvido com base na Lei 14.754/2023', desc:'Estimativa calculada seguindo as diretrizes da nova legislação: alíquota fixa 15%, apuração anual, sem isenção.' },
               { icon:'📉', titulo:'Compensação de prejuízos', desc:'Prejuízos de meses anteriores são automaticamente descontados da base tributável dentro do mesmo ano.' },
               { icon:'📊', titulo:'Dashboard com gráficos', desc:'Visualize seu P&L mensal em barras, evolução acumulada e a composição do capital (depósitos vs lucro real).', destaque: true },
               { icon:'🎯', titulo:'Insights de trading', desc:'Descubra seu melhor e pior mês, taxa de meses lucrativos e sequência atual de resultados positivos ou negativos.', destaque: true },
               { icon:'📈', titulo:'Rentabilidade mensal e anual', desc:'Veja o percentual de retorno sobre seu capital depositado, mês a mês e no acumulado do ano, com barras visuais por período.', destaque: true },
               { icon:'⏰', titulo:'DARF countdown + lembrete', desc:'Contador regressivo até o vencimento que muda de cor conforme a urgência. Receba e-mails automáticos 30, 7 e 1 dia antes.', destaque: true },
-              { icon:'📋', titulo:'Relatório para IRPF', desc:'Relatório completo com todas as informações para preencher sua declaração no programa IRPF. Plano pago.' },
+              { icon:'📋', titulo:'Relatório de apoio ao IRPF', desc:'Relatório com as informações apuradas para auxiliar no preenchimento da sua declaração no programa IRPF. Plano pago.' },
               { icon:'📤', titulo:'Exportar PDF e Excel', desc:'Exporte o relatório em PDF ou planilha Excel colorida para guardar ou enviar ao seu contador. Plano pago.', destaque: true },
             ].map((f) => (
               <div key={f.titulo} style={{
@@ -268,11 +281,11 @@ export default function LandingPage() {
             {[
               '✓ Upload do CSV AvaTrade',
               '✓ Até 2 meses de análise',
-              '✓ Lucro estimado em USD e BRL',
+              '✓ Estimativa de lucro em USD e BRL',
               '✗ Dashboard com gráficos (bloqueado)',
               '✗ Breakdown mensal detalhado (bloqueado)',
-              '✗ Imposto calculado (bloqueado)',
-              '✗ Relatório para IRPF (bloqueado)',
+              '✗ Estimativa do imposto (bloqueado)',
+              '✗ Relatório de apoio ao IRPF (bloqueado)',
             ].map((item) => (
               <div key={item} style={{
                 fontSize:14, marginBottom:10,
@@ -309,14 +322,14 @@ export default function LandingPage() {
             <div style={{ color:'var(--muted)', fontSize:13, marginBottom:28 }}>pagamento único · válido até 31/12/{ANO}</div>
             {[
               { label:'✓ Processamento de meses ilimitados' },
-              { label:'✓ Cálculo oficial do imposto (15%)' },
+              { label:'✓ Estimativa do imposto baseada na legislação (15%)' },
               { label:'✓ Breakdown mensal detalhado' },
               { label:'✓ Compensação de prejuízos' },
               { label:'✓ Dashboard completo com gráficos', novo: true },
               { label:'✓ Insights: melhor mês, taxa de acerto, sequência', novo: true },
               { label:'✓ Rentabilidade mensal e anual', novo: true },
               { label:'✓ DARF countdown com lembretes por e-mail', novo: true },
-              { label:'✓ Relatório completo para IRPF' },
+              { label:'✓ Relatório de apoio ao IRPF' },
               { label:'✓ Exportar PDF e Excel', novo: true },
             ].map((item) => (
               <div key={item.label} style={{ fontSize:14, marginBottom:10, color:'var(--text)', display:'flex', alignItems:'center', gap:8 }}>
@@ -344,6 +357,49 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* SOBRE O PROJETO */}
+      <section style={{
+        padding: mobile ? '48px 20px' : '72px 24px',
+        background:'var(--surface)',
+        borderTop:'1px solid var(--border)', borderBottom:'1px solid var(--border)',
+      }}>
+        <div style={{ maxWidth:640, margin:'0 auto', textAlign:'center' }}>
+          <div style={{ fontSize:12, color:'var(--accent)', fontWeight:700, letterSpacing:'1px', marginBottom:12 }}>SOBRE O PROJETO</div>
+          <h2 style={{ fontSize: mobile ? '22px' : 'clamp(22px,3vw,32px)', fontFamily:'Syne', marginBottom:20 }}>
+            Uma ferramenta independente, feita por trader para trader
+          </h2>
+          <p style={{ color:'var(--muted)', fontSize:15, lineHeight:1.8, marginBottom:16 }}>
+            O DarfFX é um projeto independente desenvolvido para facilitar a vida de traders
+            brasileiros que operam Forex e precisam apurar seu IR seguindo as diretrizes da
+            Lei 14.754/2023. Não somos escritório de contabilidade, não somos representantes
+            da Receita Federal nem do Banco Central.
+          </p>
+          <p style={{ color:'var(--muted)', fontSize:15, lineHeight:1.8, marginBottom:24 }}>
+            A ferramenta automatiza o processo de organização e cálculo estimado, mas{' '}
+            <strong style={{color:'var(--text)'}}>o usuário é responsável por revisar os dados inseridos</strong>{' '}
+            e, se necessário, consultar um contador para validação antes de entregar sua declaração.
+          </p>
+          <div style={{
+            background:'var(--surface2)', border:'1px solid var(--border)',
+            borderRadius:12, padding:'20px 24px', display:'inline-flex',
+            flexDirection:'column', gap:8, textAlign:'left', width:'100%', boxSizing:'border-box',
+          }}>
+            <div style={{ fontSize:13, color:'var(--muted)' }}>
+              <strong style={{color:'var(--text)'}}>Desenvolvido por:</strong> Felix Unai
+            </div>
+            <div style={{ fontSize:13, color:'var(--muted)' }}>
+              <strong style={{color:'var(--text)'}}>Contato:</strong>{' '}
+              <a href="mailto:contato@darffx.com.br" style={{ color:'var(--accent)', textDecoration:'none' }}>
+                contato@darffx.com.br
+              </a>
+            </div>
+            <div style={{ fontSize:13, color:'var(--muted)' }}>
+              <strong style={{color:'var(--text)'}}>Natureza:</strong> Ferramenta independente, sem vínculo com órgãos governamentais
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* CTA FINAL */}
       <section style={{
         padding: mobile ? '56px 20px' : '80px 24px',
@@ -351,10 +407,10 @@ export default function LandingPage() {
         borderTop:'1px solid var(--border)', textAlign:'center',
       }}>
         <h2 style={{ fontSize: mobile ? '28px' : 'clamp(28px,5vw,48px)', fontFamily:'Syne', marginBottom:16, maxWidth:600, margin:'0 auto 16px' }}>
-          Pronto para regularizar seu IR do Forex?
+          Pronto para organizar seu IR do Forex?
         </h2>
         <p style={{ color:'var(--muted)', fontSize:16, marginBottom:36, maxWidth:480, margin:'0 auto 36px' }}>
-          Crie sua conta grátis, faça o upload do CSV e veja seu resultado em segundos.
+          Crie sua conta grátis, faça o upload do CSV e veja sua estimativa em segundos.
           Sem cartão de crédito para começar.
         </p>
         <button className="btn btn-primary" style={{ padding:'16px 40px', fontSize:17, borderRadius:14 }}
@@ -368,19 +424,33 @@ export default function LandingPage() {
 
       {/* FOOTER */}
       <footer style={{
-        padding: mobile ? '24px 20px' : '32px 40px',
+        padding: mobile ? '24px 20px 32px' : '32px 40px',
         borderTop:'1px solid var(--border)',
-        display:'flex', justifyContent:'space-between', alignItems:'center',
-        flexWrap:'wrap', gap:12,
       }}>
-        <div style={{ fontFamily:'Syne', fontWeight:800, fontSize:18 }}>
-          Darf<span style={{color:'var(--accent)'}}>FX</span>
-          <span style={{ fontFamily:'DM Sans', fontWeight:400, fontSize:13, color:'var(--muted)', marginLeft:12 }}>
-            IR Forex · Lei 14.754/2023
-          </span>
+        <div style={{
+          display:'flex', justifyContent:'space-between', alignItems:'center',
+          flexWrap:'wrap', gap:12, marginBottom:20,
+        }}>
+          <div style={{ fontFamily:'Syne', fontWeight:800, fontSize:18 }}>
+            Darf<span style={{color:'var(--accent)'}}>FX</span>
+            <span style={{ fontFamily:'DM Sans', fontWeight:400, fontSize:13, color:'var(--muted)', marginLeft:12 }}>
+              Apuração de IR Forex · Lei 14.754/2023
+            </span>
+          </div>
+          <div style={{ fontSize:12, color:'var(--muted)' }}>
+            © {ANO} DarfFX · Pagamentos via Stripe · Cotação PTAX via dados públicos do Banco Central
+          </div>
         </div>
-        <div style={{ fontSize:12, color:'var(--muted)' }}>
-          © {ANO} DarfFX · Pagamentos via Stripe · Cotação PTAX · Banco Central do Brasil
+        {/* Aviso legal rodapé */}
+        <div style={{
+          borderTop:'1px solid var(--border)', paddingTop:16,
+          fontSize:11, color:'var(--muted)', lineHeight:1.7, textAlign:'center',
+        }}>
+          O DarfFX é uma ferramenta independente e não possui vínculo com a Receita Federal do Brasil,
+          o Banco Central ou qualquer órgão governamental. Os valores apresentados são estimativas
+          baseadas nos dados fornecidos pelo usuário e na legislação vigente (Lei 14.754/2023),
+          e não substituem a orientação de um contador ou profissional tributário habilitado.
+          O usuário é inteiramente responsável pela revisão e pela entrega de suas obrigações fiscais.
         </div>
       </footer>
     </div>
