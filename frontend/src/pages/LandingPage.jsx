@@ -385,12 +385,12 @@ export default function LandingPage() {
             flexDirection:'column', gap:8, textAlign:'left', width:'100%', boxSizing:'border-box',
           }}>
             <div style={{ fontSize:13, color:'var(--muted)' }}>
-              <strong style={{color:'var(--text)'}}>Desenvolvido por:</strong> Felix Unai
+              <strong style={{color:'var(--text)'}}>Desenvolvido por:</strong> Felix C. de Souza Neto
             </div>
             <div style={{ fontSize:13, color:'var(--muted)' }}>
               <strong style={{color:'var(--text)'}}>Contato:</strong>{' '}
-              <a href="mailto:contato@darffx.com.br" style={{ color:'var(--accent)', textDecoration:'none' }}>
-                contato@darffx.com.br
+              <a href="mailto:darffx.app@gmail.com" style={{ color:'var(--accent)', textDecoration:'none' }}>
+                darffx.app@gmail.com
               </a>
             </div>
             <div style={{ fontSize:13, color:'var(--muted)' }}>
