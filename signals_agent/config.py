@@ -17,11 +17,8 @@ SYNC_INTERVAL_MIN    = int(os.getenv("SYNC_INTERVAL_MINUTES", "50"))
 PAIRS = [
     {"symbol": "EUR", "par": "EUR/USD", "exchange": "CME", "invert_spot": False},
     {"symbol": "GBP", "par": "GBP/USD", "exchange": "CME", "invert_spot": False},
-    {"symbol": "JPY", "par": "USD/JPY", "exchange": "CME", "invert_spot": True},   # IB: JPY, tradingClass J7
-    {"symbol": "CAD", "par": "USD/CAD", "exchange": "CME", "invert_spot": True},
-    {"symbol": "AUD", "par": "AUD/USD", "exchange": "CME", "invert_spot": False},
-    {"symbol": "CHF", "par": "USD/CHF", "exchange": "CME", "invert_spot": True},
-    # MXN/USD e EUR/JPY não têm FOP confirmado na CME/IB — omitidos
+    {"symbol": "JPY", "par": "USD/JPY", "exchange": "CME", "invert_spot": True},
+    # AUD/USD, USD/CAD e USD/CHF removidos por liquidez insuficiente nas opções CME
 ]
 
 MIN_LIQUID_STRIKES = 5   # mínimo de strikes com bid/ask válidos para gerar sinal

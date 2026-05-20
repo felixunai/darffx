@@ -6,7 +6,7 @@ import Layout from '../components/Layout'
 import api from '../api'
 
 const TIPOS = ['Todos', 'straddle', 'strangle', 'bull_spread', 'bear_spread']
-const PARES = ['Todos', 'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CAD', 'AUD/USD', 'USD/CHF', 'EUR/JPY']
+const PARES = ['Todos', 'EUR/USD', 'GBP/USD', 'USD/JPY', 'EUR/JPY']
 
 const REC_CONFIG = {
   BUY:        { label: 'COMPRAR', color: '#00E5A0', bg: 'rgba(0,229,160,0.15)' },

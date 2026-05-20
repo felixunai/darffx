@@ -51,6 +51,8 @@ _MIGRATIONS = [
     "UPDATE sinais_opcao SET par = 'USD/CAD' WHERE par = 'CAD/USD'",
     # Remove registros com label antigo CHF/USD (renomeado para USD/CHF)
     "DELETE FROM sinais_opcao WHERE par = 'CHF/USD'",
+    # Remove pares descontinuados por baixa liquidez nas opções CME
+    "DELETE FROM sinais_opcao WHERE par IN ('USD/CHF', 'AUD/USD', 'USD/CAD')",
 ]
 
 def init_db():
