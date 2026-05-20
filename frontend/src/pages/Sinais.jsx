@@ -6,7 +6,7 @@ import Layout from '../components/Layout'
 import api from '../api'
 
 const TIPOS = ['Todos', 'straddle', 'strangle', 'bull_spread', 'bear_spread']
-const PARES = ['Todos', 'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CAD', 'AUD/USD', 'CHF/USD', 'EUR/JPY']
+const PARES = ['Todos', 'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CAD', 'AUD/USD', 'USD/CHF', 'EUR/JPY']
 
 const REC_CONFIG = {
   BUY:        { label: 'COMPRAR', color: '#00E5A0', bg: 'rgba(0,229,160,0.15)' },
@@ -16,13 +16,18 @@ const REC_CONFIG = {
   NEUTRAL:    { label: 'NEUTRO',  color: '#8E99A8', bg: 'rgba(142,153,168,0.15)' },
 }
 
+const ROLL_CONFIG = {
+  ROLAR_AGORA: { label: 'ROLAR AGORA',    color: '#FF4C6A', bg: 'rgba(255,76,106,0.15)' },
+  ROLAR_BREVE: { label: 'ROLAR EM BREVE', color: '#FFB347', bg: 'rgba(255,179,71,0.15)' },
+  AGUARDAR:    { label: 'AGUARDAR',        color: '#00E5A0', bg: 'rgba(0,229,160,0.15)' },
+}
+
 const TEND_CONFIG = {
   ALTA:    { color: '#00E5A0', label: '↑ ALTA' },
   BAIXA:   { color: '#FF4C6A', label: '↓ BAIXA' },
   LATERAL: { color: '#8E99A8', label: '→ LATERAL' },
 }
 
-// Tooltips explicativos de cada coluna
 const COL_TIPS = {
   'Par':          'Par de moedas negociado na CME via IBKR.',
   'Tipo':         'Estrutura de opções: Straddle (compra call+put ATM), Strangle (compra call+put OTM), Bull Spread (trava de alta em calls), Bear Spread (trava de baixa em puts).',
@@ -41,6 +46,49 @@ const COL_TIPS = {
 }
 
 const SCORE_MIN_CLARO = 62
+
+// ── Funções de rolagem ────────────────────────────────────────────────────────
+
+function calcRolagem(s) {
+  const dte      = s.dte ?? 999
+  const deltaC   = Math.abs(s.delta_call ?? 0)
+  const deltaP   = Math.abs(s.delta_put  ?? 0)
+  const maxDelta = Math.max(deltaC, deltaP)
+  const ivRank   = s.iv_rank_30d
+
+  let urgencia, motivoRol
+  if (dte <= 7 || maxDelta > 0.35) {
+    urgencia  = 'ROLAR_AGORA'
+    motivoRol = dte <= 7
+      ? `DTE ${dte} — gama alta, risco de atribuição`
+      : `Delta ${maxDelta.toFixed(2)} — strike testado, ajustar posição`
+  } else if (dte <= 14 || maxDelta > 0.25) {
+    urgencia  = 'ROLAR_BREVE'
+    motivoRol = dte <= 14
+      ? `DTE ${dte} — vencimento próximo, preparar rolagem`
+      : `Delta ${maxDelta.toFixed(2)} — strike sob pressão`
+  } else {
+    urgencia  = 'AGUARDAR'
+    motivoRol = `DTE ${dte} e delta dentro do normal — sem urgência`
+  }
+
+  let qualidadeIV, qualidadeLabel
+  if (ivRank == null) {
+    qualidadeIV = 'neutro';   qualidadeLabel = 'IV acum.'
+  } else if (ivRank > 50) {
+    qualidadeIV = 'bom';      qualidadeLabel = `IV Rank ${ivRank.toFixed(0)}% — bom prêmio`
+  } else if (ivRank > 30) {
+    qualidadeIV = 'moderado'; qualidadeLabel = `IV Rank ${ivRank.toFixed(0)}% — prêmio moderado`
+  } else {
+    qualidadeIV = 'ruim';     qualidadeLabel = `IV Rank ${ivRank.toFixed(0)}% — prêmio baixo`
+  }
+
+  return { urgencia, motivoRol, qualidadeIV, qualidadeLabel }
+}
+
+const URGENCIA_ORDER = { ROLAR_AGORA: 0, ROLAR_BREVE: 1, AGUARDAR: 2 }
+
+// ── Componentes auxiliares ────────────────────────────────────────────────────
 
 function ColTh({ label, style = {} }) {
   const [show, setShow] = useState(false)
@@ -79,6 +127,19 @@ function Badge({ rec }) {
   )
 }
 
+function RollBadge({ urgencia }) {
+  const cfg = ROLL_CONFIG[urgencia] || ROLL_CONFIG.AGUARDAR
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+      color: cfg.color, background: cfg.bg,
+      border: `1px solid ${cfg.color}40`, whiteSpace: 'nowrap',
+    }}>
+      {cfg.label}
+    </span>
+  )
+}
+
 function TendBadge({ tend }) {
   const cfg = TEND_CONFIG[tend] || TEND_CONFIG.LATERAL
   return <span style={{ fontSize: 11, fontWeight: 600, color: cfg.color }}>{cfg.label}</span>
@@ -96,7 +157,6 @@ function fmtPct(v) {
 
 function fmtDate(iso) {
   if (!iso) return '—'
-  // Garante interpretação UTC (backend envia sem timezone info em registros antigos)
   const s = iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z'
   return new Date(s).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 }
@@ -175,11 +235,8 @@ function ExpandedDetail({ s, onHistorico }) {
             </div>
           )}
 
-          {/* Painel de risco — straddle e strangle */}
           {['straddle', 'strangle'].includes(s.tipo_sinal) && (s.prob_profit != null || s.expected_move != null || s.dte) && (
-            <div style={{
-              display: 'flex', gap: 10, flexWrap: 'wrap',
-            }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               {s.dte > 0 && (
                 <div style={{
                   flex: '1 1 100px', background: 'var(--surface)', borderRadius: 8,
@@ -313,19 +370,71 @@ function ExpandedDetail({ s, onHistorico }) {
   )
 }
 
+function RolExpanded({ r }) {
+  const ivRank = r.iv_rank_30d
+  const creditoMinimo = r.custo_total ? (r.custo_total * 1.5).toFixed(6) : null
+  return (
+    <tr>
+      <td colSpan={11} style={{ padding: 0, background: 'var(--surface2)' }}>
+        <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent)' }}>
+            Dicas para a rolagem — {r.par}
+          </div>
+          <ul style={{ margin: 0, padding: '0 0 0 18px', fontSize: 13, lineHeight: 1.9, color: 'var(--text)' }}>
+            <li>Ao rolar: venda o próximo vencimento com delta alvo 15–20 (Δ ≈ 0.16)</li>
+            {creditoMinimo && (
+              <li>Colete pelo menos <strong style={{ color: 'var(--accent)' }}>{creditoMinimo}</strong> na nova posição para garantir crédito líquido positivo</li>
+            )}
+            {ivRank != null && ivRank < 30 && (
+              <li style={{ color: '#FFB347' }}>
+                ⚠️ IV Rank baixa ({ivRank.toFixed(0)}%) — considere aguardar IV Rank &gt; 40 antes de rolar para melhorar o prêmio coletado
+              </li>
+            )}
+            {ivRank != null && ivRank > 70 && (
+              <li style={{ color: '#00E5A0' }}>
+                ✅ IV alta ({ivRank.toFixed(0)}%) — bom momento para coletar prêmio acima do normal na nova posição
+              </li>
+            )}
+            {r.dte != null && r.dte <= 7 && (
+              <li style={{ color: '#FF4C6A' }}>
+                ⚠️ DTE muito baixo ({r.dte}d) — gama cresce exponencialmente, risco de movimento adverso amplificado
+              </li>
+            )}
+            {r.prob_profit != null && r.prob_profit < 50 && (
+              <li style={{ color: '#FFB347' }}>
+                ⚠️ POP caiu para {r.prob_profit.toFixed(0)}% — posição desequilibrada, avaliar ajuste de strikes ao rolar
+              </li>
+            )}
+            {r.tendencia === 'ALTA' && (
+              <li>Tendência de ALTA — ao rolar, considere subir o strike call para dar mais espaço</li>
+            )}
+            {r.tendencia === 'BAIXA' && (
+              <li>Tendência de BAIXA — ao rolar, considere baixar o strike put para dar mais espaço</li>
+            )}
+          </ul>
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+// ── Página principal ──────────────────────────────────────────────────────────
+
 export default function Sinais() {
   const { user } = useAuth()
   const navigate  = useNavigate()
   const isPaid    = user?.plano === 'anual' || user?.plano === 'admin'
 
-  const [sinais, setSinais]           = useState([])
-  const [loading, setLoading]         = useState(true)
-  const [erro, setErro]               = useState(null)
-  const [filtroTipo, setFiltroTipo]   = useState('Todos')
-  const [filtroPar, setFiltroPar]     = useState('Todos')
-  const [apenasClaro, setApenasClaro] = useState(false)
-  const [modal, setModal]             = useState(null)
-  const [expandedId, setExpandedId]   = useState(null)
+  const [sinais, setSinais]               = useState([])
+  const [loading, setLoading]             = useState(true)
+  const [erro, setErro]                   = useState(null)
+  const [filtroTipo, setFiltroTipo]       = useState('Todos')
+  const [filtroPar, setFiltroPar]         = useState('Todos')
+  const [apenasClaro, setApenasClaro]     = useState(false)
+  const [modal, setModal]                 = useState(null)
+  const [expandedId, setExpandedId]       = useState(null)
+  const [aba, setAba]                     = useState('sinais')
+  const [expandedRolId, setExpandedRolId] = useState(null)
 
   const carregar = useCallback(() => {
     if (!isPaid) return
@@ -348,10 +457,22 @@ export default function Sinais() {
 
   const nClaros = sinais.filter(s => s.recomendacao !== 'NEUTRAL' && (s.score || 0) >= SCORE_MIN_CLARO).length
 
+  // Dados para aba Rolagens — apenas strangles, enriquecidos e ordenados por urgência
+  const rolagens = sinais
+    .filter(s => s.tipo_sinal === 'strangle')
+    .map(s => ({ ...s, ...calcRolagem(s) }))
+    .sort((a, b) => (URGENCIA_ORDER[a.urgencia] ?? 9) - (URGENCIA_ORDER[b.urgencia] ?? 9))
+
+  const nRolarAgora = rolagens.filter(r => r.urgencia === 'ROLAR_AGORA').length
+  const nRolarBreve = rolagens.filter(r => r.urgencia === 'ROLAR_BREVE').length
+  const nAguardar   = rolagens.filter(r => r.urgencia === 'AGUARDAR').length
+
   return (
     <Layout>
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 16px 40px' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 24 }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 16 }}>
           <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Sinais de Opções</h1>
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>CME · IBKR · FOP</span>
           {isPaid && (
@@ -366,6 +487,34 @@ export default function Sinais() {
           )}
         </div>
 
+        {/* Tabs */}
+        {isPaid && (
+          <div style={{
+            display: 'flex', gap: 0, marginBottom: 24,
+            borderBottom: '1px solid var(--border)',
+          }}>
+            {[
+              { key: 'sinais',   label: 'Sinais' },
+              { key: 'rolagens', label: `Rolagens${nRolarAgora > 0 ? ` 🔴${nRolarAgora}` : nRolarBreve > 0 ? ` 🟡${nRolarBreve}` : ''}` },
+            ].map(t => (
+              <button
+                key={t.key}
+                onClick={() => setAba(t.key)}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  padding: '8px 20px', fontSize: 14, fontWeight: aba === t.key ? 700 : 400,
+                  color: aba === t.key ? 'var(--accent)' : 'var(--muted)',
+                  borderBottom: aba === t.key ? '2px solid var(--accent)' : '2px solid transparent',
+                  marginBottom: -1, transition: 'all 0.15s',
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Paywall */}
         {!isPaid && (
           <div style={{
             background: 'var(--surface)', border: '1px solid var(--border)',
@@ -388,9 +537,9 @@ export default function Sinais() {
           </div>
         )}
 
-        {isPaid && (
+        {/* ── ABA SINAIS ── */}
+        {isPaid && aba === 'sinais' && (
           <>
-            {/* Filtros */}
             <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
               <select
                 value={filtroTipo}
@@ -409,7 +558,6 @@ export default function Sinais() {
                 {PARES.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
 
-              {/* Toggle sinais claros */}
               <label style={{
                 display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
                 padding: '6px 12px', borderRadius: 8,
@@ -443,7 +591,6 @@ export default function Sinais() {
               </span>
             </div>
 
-            {/* Aviso IV Rank acumulando */}
             {!loading && sinais.length > 0 && sinais.every(s => s.iv_rank_30d == null) && (
               <div style={{
                 background: 'rgba(255,179,71,0.08)', border: '1px solid rgba(255,179,71,0.3)',
@@ -581,6 +728,150 @@ export default function Sinais() {
             )}
           </>
         )}
+
+        {/* ── ABA ROLAGENS ── */}
+        {isPaid && aba === 'rolagens' && (
+          <>
+            {/* Cards de resumo */}
+            <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+              {[
+                { n: nRolarAgora, label: 'para rolar',  color: '#FF4C6A', bg: 'rgba(255,76,106,0.08)',  border: 'rgba(255,76,106,0.3)',  icon: '🔴' },
+                { n: nRolarBreve, label: 'monitorar',   color: '#FFB347', bg: 'rgba(255,179,71,0.08)',  border: 'rgba(255,179,71,0.3)',  icon: '🟡' },
+                { n: nAguardar,   label: 'OK por ora',  color: '#00E5A0', bg: 'rgba(0,229,160,0.08)',   border: 'rgba(0,229,160,0.3)',   icon: '🟢' },
+              ].map(c => (
+                <div key={c.label} style={{
+                  flex: '1 1 140px', background: c.bg, border: `1px solid ${c.border}`,
+                  borderRadius: 10, padding: '12px 18px', textAlign: 'center',
+                }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: c.color }}>{c.icon} {c.n}</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                    {c.n === 1 ? 'par' : 'pares'} {c.label}
+                  </div>
+                </div>
+              ))}
+              <div style={{
+                flex: '1 1 280px', background: 'var(--surface)', border: '1px solid var(--border)',
+                borderRadius: 10, padding: '10px 14px', fontSize: 12, color: 'var(--muted)', lineHeight: 1.6,
+                display: 'flex', alignItems: 'center',
+              }}>
+                💡 Regras: rolar quando DTE ≤ 14 ou delta do strike vendido &gt; 0.25. Melhor momento: IV Rank &gt; 40.
+              </div>
+            </div>
+
+            {loading && <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 48 }}>Carregando…</div>}
+
+            {!loading && rolagens.length === 0 && (
+              <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 48 }}>
+                Nenhum dado de strangle disponível. O agente precisa estar rodando com TWS aberto.
+              </div>
+            )}
+
+            {!loading && rolagens.length > 0 && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--muted)', textAlign: 'left' }}>
+                      <th style={{ padding: '8px 10px' }}>Par</th>
+                      <th style={{ padding: '8px 10px' }}>Spot</th>
+                      <th style={{ padding: '8px 10px' }}>Strike Call</th>
+                      <th style={{ padding: '8px 10px' }}>Strike Put</th>
+                      <th style={{ padding: '8px 10px' }}>Venc.</th>
+                      <th style={{ padding: '8px 10px' }}>DTE</th>
+                      <th style={{ padding: '8px 10px' }}>Delta C / P</th>
+                      <th style={{ padding: '8px 10px' }}>POP</th>
+                      <th style={{ padding: '8px 10px' }}>IV Rank</th>
+                      <th style={{ padding: '8px 10px' }}>Rolagem</th>
+                      <th style={{ padding: '8px 10px' }}>Motivo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rolagens.map(r => {
+                      const isExp = expandedRolId === r.id
+                      const urgColor = ROLL_CONFIG[r.urgencia]?.color || '#8E99A8'
+                      const deltaC = Math.abs(r.delta_call ?? 0)
+                      const deltaP = Math.abs(r.delta_put  ?? 0)
+                      return (
+                        <>
+                          <tr
+                            key={r.id}
+                            onClick={() => setExpandedRolId(isExp ? null : r.id)}
+                            style={{
+                              borderBottom: isExp ? 'none' : '1px solid var(--border)',
+                              verticalAlign: 'middle', cursor: 'pointer',
+                              background: isExp ? 'var(--surface2)' : 'transparent',
+                              borderLeft: `3px solid ${urgColor}`,
+                            }}
+                          >
+                            <td style={{ padding: '10px 10px', fontWeight: 700 }}>
+                              <span style={{ marginRight: 6, fontSize: 10, color: 'var(--muted)' }}>
+                                {isExp ? '▼' : '▶'}
+                              </span>
+                              {r.par}
+                            </td>
+                            <td style={{ padding: '10px 10px' }}>{fmt(r.spot_price)}</td>
+                            <td style={{ padding: '10px 10px' }}>{fmt(r.strike_principal)}</td>
+                            <td style={{ padding: '10px 10px' }}>{r.strike_secundario ? fmt(r.strike_secundario) : '—'}</td>
+                            <td style={{ padding: '10px 10px', fontSize: 11, color: 'var(--muted)' }}>{r.expiracao}</td>
+                            <td style={{ padding: '10px 10px' }}>
+                              <span style={{
+                                fontWeight: 700,
+                                color: r.dte <= 7 ? '#FF4C6A' : r.dte <= 14 ? '#FFB347' : 'var(--text)',
+                              }}>
+                                {r.dte ?? '—'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '10px 10px' }}>
+                              <span style={{ color: deltaC > 0.35 ? '#FF4C6A' : deltaC > 0.25 ? '#FFB347' : 'var(--text)' }}>
+                                {fmt(r.delta_call, 3)}
+                              </span>
+                              {' / '}
+                              <span style={{ color: deltaP > 0.35 ? '#FF4C6A' : deltaP > 0.25 ? '#FFB347' : 'var(--text)' }}>
+                                {fmt(r.delta_put, 3)}
+                              </span>
+                            </td>
+                            <td style={{ padding: '10px 10px' }}>
+                              {r.prob_profit != null
+                                ? <span style={{ color: r.prob_profit >= 65 ? '#00E5A0' : r.prob_profit >= 50 ? '#FFB347' : '#FF4C6A', fontWeight: 600 }}>
+                                    {r.prob_profit.toFixed(0)}%
+                                  </span>
+                                : <span style={{ color: 'var(--muted)' }}>—</span>
+                              }
+                            </td>
+                            <td style={{ padding: '10px 10px' }}>
+                              {r.iv_rank_30d != null
+                                ? <span style={{
+                                    color: r.qualidadeIV === 'bom' ? '#00E5A0' : r.qualidadeIV === 'ruim' ? '#FF4C6A' : 'var(--text)',
+                                    fontWeight: 600, fontSize: 11,
+                                  }}>
+                                    {r.qualidadeLabel}
+                                  </span>
+                                : <span style={{ color: 'var(--muted)', fontSize: 11 }}>acum.</span>
+                              }
+                            </td>
+                            <td style={{ padding: '10px 10px' }}>
+                              <RollBadge urgencia={r.urgencia} />
+                            </td>
+                            <td style={{ padding: '10px 10px', fontSize: 12, color: 'var(--muted)' }}>
+                              {r.motivoRol}
+                            </td>
+                          </tr>
+                          {isExp && <RolExpanded key={`rol-${r.id}`} r={r} />}
+                        </>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div style={{ marginTop: 20, fontSize: 11, color: 'var(--muted)', lineHeight: 1.7 }}>
+              <strong>Como usar:</strong> Esta aba monitora os strangles vendidos abertos com base nos dados mais recentes da CME.
+              Clique em qualquer linha para ver dicas táticas específicas para a rolagem daquele par.
+              Os strikes mostrados são os strikes ótimos do momento — compare com seus strikes reais para decidir se ajusta ao rolar.
+            </div>
+          </>
+        )}
+
       </div>
 
       {modal && (
