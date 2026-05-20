@@ -241,7 +241,35 @@ def sync_sinais(
         criados += 1
 
     db.commit()
+    _cleanup_sinais(db)
     return {"ok": True, "criados": criados}
+
+
+def _cleanup_sinais(db: Session) -> None:
+    """
+    Mantém no máximo 1 registro por (par, tipo_sinal, dia) e apaga tudo além de 30 dias.
+    Garante histórico suficiente para o IV Rank sem acumular lixo.
+    """
+    # 1. Apaga registros com mais de 30 dias
+    cutoff = datetime.utcnow() - timedelta(days=30)
+    db.query(SinalOpcao).filter(SinalOpcao.criado_em < cutoff).delete(synchronize_session=False)
+
+    # 2. Por (par, tipo_sinal, data), mantém apenas o id mais alto (mais recente do dia)
+    subq = (
+        db.query(func.max(SinalOpcao.id).label("keep_id"))
+        .group_by(
+            SinalOpcao.par,
+            SinalOpcao.tipo_sinal,
+            func.date(SinalOpcao.criado_em),
+        )
+        .subquery()
+    )
+    keep_ids = [row[0] for row in db.query(subq.c.keep_id).all() if row[0] is not None]
+
+    if keep_ids:
+        db.query(SinalOpcao).filter(~SinalOpcao.id.in_(keep_ids)).delete(synchronize_session=False)
+
+    db.commit()
 
 
 @router.get("/latest", response_model=List[SinalOut])
