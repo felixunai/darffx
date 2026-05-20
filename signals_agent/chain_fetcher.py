@@ -36,6 +36,7 @@ class OptionsChain:
     expiry: str
     spot: float
     dte: int = 0           # dias até vencimento
+    invert_spot: bool = False  # True para pares cotados invertidos (ex: USD/JPY, USD/CAD)
     calls: list[OptionLeg] = field(default_factory=list)
     puts: list[OptionLeg] = field(default_factory=list)
 
@@ -165,8 +166,11 @@ def fetch_chain(ib: IB, symbol: str, par: str, exchange: str = "CME", invert_spo
             # openInterest não é atributo padrão do Ticker para FOP — usar getattr com fallback
             oi = getattr(ticker, 'openInterest', None) or getattr(ticker, 'optOpenInterest', None) or 0
 
+            # Para pares invertidos (USD/JPY, USD/CAD) converte o strike para convenção de exibição
+            display_strike = (1.0 / strike) if invert_spot and strike > 0 else strike
+
             leg = OptionLeg(
-                strike=strike,
+                strike=display_strike,
                 right=right,
                 expiry=expiry,
                 bid=bid,
@@ -203,6 +207,7 @@ def fetch_chain(ib: IB, symbol: str, par: str, exchange: str = "CME", invert_spo
         expiry=expiry,
         spot=spot,
         dte=dte,
+        invert_spot=invert_spot,
         calls=sorted(liquid_calls, key=lambda l: l.strike),
         puts=sorted(liquid_puts,  key=lambda l: l.strike),
     )
