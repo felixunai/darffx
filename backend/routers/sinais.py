@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from ..deps import get_db, get_paid_user, verificar_api_key
@@ -277,15 +277,25 @@ def sync_sinais(
 def _cleanup_sinais(db: Session) -> None:
     """
     Mantém no máximo 1 registro por (par, tipo_sinal, dia) e apaga tudo além de 30 dias.
-    Garante histórico suficiente para o IV Rank sem acumular lixo.
+    Prefere registros reais (strike_principal IS NOT NULL) sobre skeletons de backfill.
+    Desempata pelo id mais alto.
     """
     # 1. Apaga registros com mais de 30 dias
     cutoff = datetime.utcnow() - timedelta(days=30)
     db.query(SinalOpcao).filter(SinalOpcao.criado_em < cutoff).delete(synchronize_session=False)
 
-    # 2. Por (par, tipo_sinal, data), mantém apenas o id mais alto (mais recente do dia)
+    # 2. Por (par, tipo_sinal, data): prefere o id mais alto entre registros reais;
+    #    se não há nenhum real no dia, cai para o id mais alto geral (skeleton).
+    #    COALESCE(MAX(CASE WHEN strike_principal IS NOT NULL THEN id END), MAX(id))
     subq = (
-        db.query(func.max(SinalOpcao.id).label("keep_id"))
+        db.query(
+            func.coalesce(
+                func.max(
+                    case((SinalOpcao.strike_principal.isnot(None), SinalOpcao.id), else_=None)
+                ),
+                func.max(SinalOpcao.id),
+            ).label("keep_id")
+        )
         .group_by(
             SinalOpcao.par,
             SinalOpcao.tipo_sinal,
