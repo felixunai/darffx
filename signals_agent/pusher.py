@@ -25,17 +25,26 @@ def _sanitize(obj):
     return obj
 
 
-def push_signals(signals: list[Signal], dry_run: bool = False) -> bool:
+def push_signals(signals: list[Signal], dry_run: bool = False,
+                 backfill: bool = False) -> bool:
     """
     Faz POST de todos os sinais de uma rodada para o backend.
     Se dry_run=True, apenas loga sem enviar.
+    Se backfill=True, inclui criado_em_override no payload.
     Retorna True se bem-sucedido.
     """
     if not signals:
         logger.info("Nenhum sinal para enviar.")
         return True
 
-    payload = [_sanitize(asdict(s)) for s in signals]
+    payload = []
+    for s in signals:
+        d = _sanitize(asdict(s))
+        # Remove campos internos que não pertencem ao schema
+        d.pop("_criado_em_override", None)
+        if backfill and hasattr(s, "_criado_em_override"):
+            d["criado_em"] = s._criado_em_override  # type: ignore[attr-defined]
+        payload.append(d)
 
     if dry_run:
         logger.info("[DRY-RUN] %d sinais (não enviados):", len(payload))

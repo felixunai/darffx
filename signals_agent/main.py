@@ -12,6 +12,7 @@ import logging
 import sys
 import time
 
+from .backfiller import run_backfill
 from .chain_fetcher import fetch_chain
 from .config import PAIRS, SYNC_INTERVAL_MIN
 from .connector import disconnect, get_ib
@@ -84,9 +85,16 @@ def main():
                         help="Calcula sinais mas não envia ao Railway")
     parser.add_argument("--once", action="store_true",
                         help="Executa um ciclo e encerra")
+    parser.add_argument("--backfill", action="store_true",
+                        help="Importa 30 dias de IV histórica para popular o IV Rank imediatamente")
     args = parser.parse_args()
 
     try:
+        if args.backfill:
+            logger.info("Modo backfill: importando 30 dias de IV histórica…")
+            run_backfill(dry_run=args.dry_run)
+            sys.exit(0)
+
         if args.once or args.dry_run:
             sys.exit(run_once(dry_run=args.dry_run))
 

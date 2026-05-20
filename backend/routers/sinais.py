@@ -51,6 +51,7 @@ class SinalPayload(BaseModel):
     dte: Optional[int] = None
     prob_profit: Optional[float] = None
     expected_move: Optional[float] = None
+    criado_em: Optional[str] = None   # usado pelo backfill para datas retroativas
 
 
 # ── Schemas de saída (Railway → frontend) ───────────────────────────────────
@@ -136,6 +137,13 @@ def sync_sinais(
         except ValueError:
             raise HTTPException(422, f"Data inválida: {s.expiracao}")
 
+        criado_em_val = None
+        if s.criado_em:
+            try:
+                criado_em_val = datetime.fromisoformat(s.criado_em)
+            except ValueError:
+                pass
+
         iv_rank = _calcular_iv_rank(db, s.par, s.iv_media)
 
         db.add(SinalOpcao(
@@ -176,6 +184,7 @@ def sync_sinais(
             dte=s.dte,
             prob_profit=s.prob_profit,
             expected_move=s.expected_move,
+            **({"criado_em": criado_em_val} if criado_em_val else {}),
         ))
         criados += 1
 
