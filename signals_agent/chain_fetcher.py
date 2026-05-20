@@ -194,6 +194,17 @@ def fetch_chain(ib: IB, symbol: str, par: str, exchange: str = "CME", invert_spo
     liquid_calls = [c for c in calls_raw if c.bid > 0 or c.ask > 0]
     liquid_puts  = [p for p in puts_raw  if p.bid > 0 or p.ask > 0]
 
+    # Para pares invertidos (USD/JPY, USD/CAD) a semântica call/put da CME é oposta:
+    #   CME call CAD/USD = lucra se CAD sobe  = USD/CAD cai  = "put" na visão do usuário
+    #   CME put  CAD/USD = lucra se CAD cai   = USD/CAD sobe = "call" na visão do usuário
+    # Solução: trocar os buckets e negar os deltas para que o signal_engine opere
+    # corretamente no espaço de preços do usuário.
+    if invert_spot:
+        for leg in liquid_calls + liquid_puts:
+            if leg.delta is not None:
+                leg.delta = -leg.delta
+        liquid_calls, liquid_puts = liquid_puts, liquid_calls
+
     if len(liquid_calls) < MIN_LIQUID_STRIKES or len(liquid_puts) < MIN_LIQUID_STRIKES:
         logger.warning("[%s] Liquidez insuficiente (%d calls, %d puts). Par ignorado.",
                        symbol, len(liquid_calls), len(liquid_puts))
