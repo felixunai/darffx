@@ -358,5 +358,5 @@ def _to_out(s: SinalOpcao) -> SinalOut:
         dte=s.dte,
         prob_profit=s.prob_profit,
         expected_move=s.expected_move,
-        criado_em=s.criado_em.isoformat() if s.criado_em else "",
+        criado_em=(s.criado_em.isoformat() + "Z") if s.criado_em else "",
     )

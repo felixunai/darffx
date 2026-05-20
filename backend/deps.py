@@ -47,6 +47,8 @@ _MIGRATIONS = [
     "ALTER TABLE sinais_opcao ADD COLUMN IF NOT EXISTS dte INTEGER DEFAULT 0",
     "ALTER TABLE sinais_opcao ADD COLUMN IF NOT EXISTS prob_profit FLOAT",
     "ALTER TABLE sinais_opcao ADD COLUMN IF NOT EXISTS expected_move FLOAT",
+    # Renomeia par CAD/USD → USD/CAD (convenção correta do usuário)
+    "UPDATE sinais_opcao SET par = 'USD/CAD' WHERE par = 'CAD/USD'",
 ]
 
 def init_db():
