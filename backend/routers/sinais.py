@@ -101,6 +101,49 @@ class SinalOut(BaseModel):
         from_attributes = True
 
 
+def _recalcular_score(tipo_sinal: str, iv_rank: Optional[float],
+                      iv_skew: Optional[float], tendencia: Optional[str],
+                      rsi_14: Optional[float], bb_width: Optional[float]) -> tuple[float, str]:
+    """Recalcula score/recomendação com o iv_rank real calculado após inserção."""
+    if iv_rank is None:
+        return 50.0, "NEUTRAL"
+
+    if tipo_sinal in ("straddle", "strangle"):
+        if iv_rank > 70:
+            score, rec = iv_rank, "SELL"
+        elif iv_rank < 30:
+            score, rec = 100.0 - iv_rank, "BUY"
+        else:
+            return 50.0, "NEUTRAL"
+        if rec == "BUY" and bb_width and bb_width < 0.008:
+            score = min(100.0, score + 20)
+        elif rec == "SELL" and rsi_14 and rsi_14 > 65:
+            score = min(100.0, score + 10)
+        return round(score, 1), rec
+
+    if tipo_sinal == "bull_spread":
+        if iv_skew and iv_skew > 0.003:
+            score, rec = min(100.0, abs(iv_skew) * 8000), "BULL_SPREAD"
+        else:
+            return 30.0, "NEUTRAL"
+        if tendencia == "ALTA":   score = min(100.0, score + 20)
+        elif tendencia == "BAIXA": score = max(10.0,  score - 20)
+        if rsi_14 and rsi_14 > 70: score = max(10.0, score - 15)
+        return round(score, 1), rec
+
+    if tipo_sinal == "bear_spread":
+        if iv_skew and iv_skew < -0.003:
+            score, rec = min(100.0, abs(iv_skew) * 8000), "BEAR_SPREAD"
+        else:
+            return 30.0, "NEUTRAL"
+        if tendencia == "BAIXA":  score = min(100.0, score + 20)
+        elif tendencia == "ALTA": score = max(10.0,  score - 20)
+        if rsi_14 and rsi_14 < 30: score = max(10.0, score - 15)
+        return round(score, 1), rec
+
+    return 50.0, "NEUTRAL"
+
+
 def _calcular_iv_rank(db: Session, par: str, iv_media_atual: Optional[float]) -> Optional[float]:
     """Calcula IV Rank percentual usando min/max dos últimos 30 dias para o par."""
     if iv_media_atual is None:
@@ -146,6 +189,15 @@ def sync_sinais(
 
         iv_rank = _calcular_iv_rank(db, s.par, s.iv_media)
 
+        # Recalcula score/rec com o IV Rank real (o agente envia score provisório sem rank)
+        score_final, rec_final = _recalcular_score(
+            s.tipo_sinal, iv_rank, s.iv_skew, s.tendencia, s.rsi_14, s.bb_width
+        )
+        # Mantém score do agente apenas se o backend não tiver IV Rank suficiente
+        if iv_rank is None:
+            score_final = s.score or 50.0
+            rec_final   = s.recomendacao or "NEUTRAL"
+
         db.add(SinalOpcao(
             par=s.par,
             symbol=s.symbol,
@@ -171,8 +223,8 @@ def sync_sinais(
             oi_call=s.oi_call,
             oi_put=s.oi_put,
             iv_rank_30d=iv_rank,
-            score=s.score,
-            recomendacao=s.recomendacao,
+            score=score_final,
+            recomendacao=rec_final,
             rsi_14=s.rsi_14,
             sma20=s.sma20,
             sma50=s.sma50,

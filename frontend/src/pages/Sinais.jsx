@@ -173,8 +173,8 @@ function ExpandedDetail({ s, onHistorico }) {
             </div>
           )}
 
-          {/* Painel de risco — strangle vendido */}
-          {s.tipo_sinal === 'strangle' && (s.prob_profit != null || s.expected_move != null || s.dte) && (
+          {/* Painel de risco — straddle e strangle */}
+          {['straddle', 'strangle'].includes(s.tipo_sinal) && (s.prob_profit != null || s.expected_move != null || s.dte) && (
             <div style={{
               display: 'flex', gap: 10, flexWrap: 'wrap',
             }}>
