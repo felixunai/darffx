@@ -28,9 +28,10 @@ logger = logging.getLogger("signals_agent")
 
 
 def run_once(dry_run: bool = False) -> int:
-    """Executa um ciclo completo: conecta → busca → calcula → envia."""
+    """Executa um ciclo completo: conecta → para cada par busca, calcula e envia."""
     ib = get_ib()
-    all_signals = []
+    total_enviados = 0
+    falhas = 0
 
     for pair in PAIRS:
         symbol   = pair["symbol"]
@@ -43,6 +44,7 @@ def run_once(dry_run: bool = False) -> int:
             chain = fetch_chain(ib, symbol, par, exchange=exchange, invert_spot=invert)
         except Exception as e:
             logger.error("[%s] Erro ao buscar cadeia: %s", symbol, e)
+            falhas += 1
             continue
 
         if chain is None:
@@ -59,13 +61,21 @@ def run_once(dry_run: bool = False) -> int:
             signals = generate_signals(chain, tech)
         except Exception as e:
             logger.error("[%s] Erro ao gerar sinais: %s", symbol, e)
+            falhas += 1
             continue
 
-        all_signals.extend(signals)
+        if not signals:
+            continue
 
-    logger.info("Total de sinais gerados: %d", len(all_signals))
-    ok = push_signals(all_signals, dry_run=dry_run)
-    return 0 if ok else 1
+        logger.info("[%s] Enviando %d sinais…", par, len(signals))
+        ok = push_signals(signals, dry_run=dry_run)
+        if ok:
+            total_enviados += len(signals)
+        else:
+            falhas += 1
+
+    logger.info("Ciclo concluído: %d sinais enviados, %d falhas.", total_enviados, falhas)
+    return 0 if falhas == 0 else 1
 
 
 def main():
