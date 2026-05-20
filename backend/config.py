@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # Cron jobs — protegidos por secret
     CRON_SECRET: str = ""  # definir no .env; chamadas sem o secret são rejeitadas
 
+    # Sinais de opções — API key usada pelo agente local para sincronizar dados
+    SINAIS_API_KEY: str = ""  # gerar um UUID e colocar também no .env.signals
+
     # Preços em centavos (BRL)
     PRECO_ACESSO_CENTAVOS: int = 6990   # R$ 69,90 — acesso anual (expira 31/12 do ano vigente)
 

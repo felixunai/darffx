@@ -149,3 +149,46 @@ class PtaxCache(Base):
     ptax          = Column(Float, nullable=False)
     consultado_em = Column(DateTime, default=datetime.utcnow)
     __table_args__ = (UniqueConstraint("mes", "ano", name="uq_ptax_mes_ano"),)
+
+
+class SinalOpcao(Base):
+    """Sinal de operação estruturada em opções Forex (CME/IBKR). Gerado pelo agente local."""
+    __tablename__ = "sinais_opcao"
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    par               = Column(String(20), nullable=False, index=True)   # "EUR/USD"
+    symbol            = Column(String(10), nullable=False)               # "EUR"
+    expiracao         = Column(Date, nullable=False)
+    tipo_sinal        = Column(String(20), nullable=False)               # straddle|strangle|bull_spread|bear_spread
+    strike_principal  = Column(Float)    # ATM strike
+    strike_secundario = Column(Float)    # OTM strike (strangle/spread)
+    premio_call       = Column(Float)    # mid-price call
+    premio_put        = Column(Float)    # mid-price put
+    custo_total       = Column(Float)    # prêmio total da estrutura
+    delta_call        = Column(Float)
+    delta_put         = Column(Float)
+    gamma             = Column(Float)
+    theta_call        = Column(Float)
+    vega_call         = Column(Float)
+    iv_call           = Column(Float)
+    iv_put            = Column(Float)
+    iv_media          = Column(Float)    # (iv_call + iv_put) / 2
+    iv_skew           = Column(Float)    # iv_call - iv_put (skew direcional)
+    spot_price        = Column(Float)
+    volume_call       = Column(Integer)
+    volume_put        = Column(Integer)
+    oi_call           = Column(Integer)  # open interest call
+    oi_put            = Column(Integer)  # open interest put
+    iv_rank_30d       = Column(Float)    # 0-100, min-max sobre últimos 30 dias
+    score             = Column(Float)    # qualidade do sinal 0-100
+    recomendacao      = Column(String(15))  # BUY|SELL|NEUTRAL|BULL_SPREAD|BEAR_SPREAD
+    # Análise técnica
+    rsi_14            = Column(Float)    # RSI 14 períodos do futuro subjacente
+    sma20             = Column(Float)    # Média móvel 20 dias
+    sma50             = Column(Float)    # Média móvel 50 dias
+    bb_width          = Column(Float)    # Largura das Bandas de Bollinger (compressão)
+    tendencia         = Column(String(10))  # ALTA | BAIXA | LATERAL
+    pc_ratio          = Column(Float)    # Razão put/call de volume
+    # Explicação humana
+    motivo            = Column(String(700))  # texto explicando o sinal
+    strikes_recomendados = Column(String(250))  # strikes sugeridos formatados
+    criado_em         = Column(DateTime, default=datetime.utcnow, index=True)

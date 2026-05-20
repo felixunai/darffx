@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Header
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
@@ -80,4 +80,17 @@ def get_current_user(token: str = Depends(oauth2), db: Session = Depends(get_db)
 def get_admin_user(usuario: User = Depends(get_current_user)) -> User:
     if usuario.email != ADMIN_EMAIL:
         raise HTTPException(403, "Acesso restrito ao administrador.")
+    return usuario
+
+
+def verificar_api_key(x_api_key: str = Header(None)) -> None:
+    """Autentica chamadas do agente local (signals_agent) via API key no header."""
+    if not settings.SINAIS_API_KEY or x_api_key != settings.SINAIS_API_KEY:
+        raise HTTPException(403, "API key inválida ou ausente.")
+
+
+def get_paid_user(usuario: User = Depends(get_current_user)) -> User:
+    """Garante que o usuário tem plano anual ou é admin."""
+    if usuario.plano not in ("anual", "admin"):
+        raise HTTPException(403, "Recurso exclusivo para o plano anual.")
     return usuario

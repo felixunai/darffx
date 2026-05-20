@@ -1,0 +1,372 @@
+"""Gera sinais de operações estruturadas combinando análise de IV e análise técnica."""
+
+import logging
+from dataclasses import dataclass, field
+from typing import Optional
+
+from .chain_fetcher import OptionLeg, OptionsChain
+from .tech_analysis import TechIndicators
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class Signal:
+    par: str
+    symbol: str
+    expiracao: str
+    tipo_sinal: str
+    strike_principal: Optional[float]
+    strike_secundario: Optional[float]
+    premio_call: Optional[float]
+    premio_put: Optional[float]
+    custo_total: Optional[float]
+    delta_call: Optional[float]
+    delta_put: Optional[float]
+    gamma: Optional[float]
+    theta_call: Optional[float]
+    vega_call: Optional[float]
+    iv_call: Optional[float]
+    iv_put: Optional[float]
+    iv_media: Optional[float]
+    iv_skew: Optional[float]
+    spot_price: float
+    volume_call: Optional[int]
+    volume_put: Optional[int]
+    oi_call: Optional[int]
+    oi_put: Optional[int]
+    score: Optional[float]
+    recomendacao: str
+    # Campos enriquecidos
+    motivo: str = ""
+    strikes_recomendados: str = ""
+    rsi_14: Optional[float] = None
+    sma20: Optional[float] = None
+    sma50: Optional[float] = None
+    bb_width: Optional[float] = None
+    tendencia: str = "LATERAL"
+    pc_ratio: Optional[float] = None
+
+
+def _expiry_to_iso(expiry: str) -> str:
+    return f"{expiry[:4]}-{expiry[4:6]}-{expiry[6:]}"
+
+
+def _find_atm(legs: list[OptionLeg], spot: float) -> Optional[OptionLeg]:
+    return min(legs, key=lambda l: abs(l.strike - spot)) if legs else None
+
+
+def _find_otm_call(calls: list[OptionLeg], atm_strike: float) -> Optional[OptionLeg]:
+    above = [c for c in calls if c.strike > atm_strike]
+    return above[0] if above else None
+
+
+def _find_otm_put(puts: list[OptionLeg], atm_strike: float) -> Optional[OptionLeg]:
+    below = [p for p in puts if p.strike < atm_strike]
+    return below[-1] if below else None
+
+
+def _pc_ratio(chain: OptionsChain) -> Optional[float]:
+    vol_call = sum(c.volume for c in chain.calls)
+    vol_put  = sum(p.volume for p in chain.puts)
+    if vol_call > 0:
+        return round(vol_put / vol_call, 2)
+    return None
+
+
+def _fmt(v: Optional[float], dec: int = 4) -> str:
+    return f"{v:.{dec}f}" if v is not None else "N/D"
+
+
+# ── Scoring ───────────────────────────────────────────────────────────────────
+
+def _score_vol(iv_rank: Optional[float], iv_media: Optional[float],
+               tech: TechIndicators, tipo: str) -> tuple[float, str]:
+    """
+    Pontuação para estruturas de volatilidade (straddle / strangle).
+    Combina IV rank + sinal técnico.
+    """
+    # Base: IV absoluta quando rank ainda não disponível
+    if iv_rank is None:
+        if iv_media is not None:
+            pct = iv_media * 100
+            if pct < 5.0:
+                base_score, base_rec = min(100.0, (5.0 - pct) / 5.0 * 100), "BUY"
+            elif pct > 12.0:
+                base_score, base_rec = min(100.0, (pct - 12.0) / 8.0 * 100), "SELL"
+            else:
+                base_score, base_rec = 50.0, "NEUTRAL"
+        else:
+            return 50.0, "NEUTRAL"
+    else:
+        if iv_rank > 70:
+            base_score, base_rec = iv_rank, "SELL"
+        elif iv_rank < 30:
+            base_score, base_rec = 100 - iv_rank, "BUY"
+        else:
+            base_score, base_rec = 50.0, "NEUTRAL"
+
+    # Boost técnico
+    bonus = 0.0
+    if base_rec == "BUY" and tech.sinal_tecnico == "BB_SQUEEZE":
+        bonus = 20.0   # squeeze confirma compra de vol
+    elif base_rec == "SELL" and tech.sinal_tecnico == "VENDA":
+        bonus = 10.0   # sobrecomprado confirma venda de vol
+    elif base_rec == "BUY" and tech.sinal_tecnico == "VENDA":
+        bonus = -10.0  # contradição — reduz confiança
+
+    return round(min(100.0, base_score + bonus), 1), base_rec
+
+
+def _score_spread(iv_skew: Optional[float], tech: TechIndicators,
+                  tipo: str) -> tuple[float, str]:
+    """
+    Pontuação para spreads direcionais (bull_spread / bear_spread).
+    Combina skew de IV + tendência técnica.
+    """
+    if iv_skew is None:
+        return 50.0, "NEUTRAL"
+
+    if tipo == "bull_spread":
+        # Skew positivo (calls mais caras) = mercado precificando alta
+        base = min(100.0, abs(iv_skew) * 8000) if iv_skew > 0.003 else 30.0
+        rec  = "BULL_SPREAD" if iv_skew > 0.003 else "NEUTRAL"
+        # Confirmação técnica
+        if tech.tendencia == "ALTA":
+            base = min(100.0, base + 20)
+        elif tech.tendencia == "BAIXA":
+            base = max(10.0, base - 20)
+        if tech.rsi_14 and tech.rsi_14 > 70:
+            base = max(10.0, base - 15)   # sobrecomprado → spread bull mais arriscado
+    else:  # bear_spread
+        base = min(100.0, abs(iv_skew) * 8000) if iv_skew < -0.003 else 30.0
+        rec  = "BEAR_SPREAD" if iv_skew < -0.003 else "NEUTRAL"
+        if tech.tendencia == "BAIXA":
+            base = min(100.0, base + 20)
+        elif tech.tendencia == "ALTA":
+            base = max(10.0, base - 20)
+        if tech.rsi_14 and tech.rsi_14 < 30:
+            base = max(10.0, base - 15)   # sobrevendido → spread bear mais arriscado
+
+    return round(base, 1), rec
+
+
+# ── Geração de motivo ─────────────────────────────────────────────────────────
+
+def _motivo_straddle(rec: str, score: float, iv_media: Optional[float],
+                     iv_rank: Optional[float], tech: TechIndicators,
+                     custo: Optional[float], atm: float, spot: float) -> str:
+    partes = []
+
+    # IV
+    if iv_rank is not None:
+        partes.append(f"IV Rank {iv_rank:.0f}% ({('cara' if iv_rank > 70 else 'barata' if iv_rank < 30 else 'neutra')})")
+    elif iv_media is not None:
+        partes.append(f"IV atual {iv_media*100:.2f}% ({('acima' if iv_media*100 > 10 else 'abaixo')} da média histórica de Forex)")
+
+    # Técnico
+    if tech.sinal_tecnico == "BB_SQUEEZE":
+        partes.append(f"Bandas de Bollinger comprimidas (width {tech.bb_width:.3f}) → movimento explosivo esperado")
+    if tech.rsi_14:
+        if tech.rsi_14 > 65:
+            partes.append(f"RSI {tech.rsi_14:.0f} sobrecomprado")
+        elif tech.rsi_14 < 35:
+            partes.append(f"RSI {tech.rsi_14:.0f} sobrevendido")
+    if tech.tendencia != "LATERAL":
+        partes.append(f"Tendência {tech.tendencia} (spot {'>' if tech.tendencia == 'ALTA' else '<'} SMA20 {'>' if tech.tendencia == 'ALTA' else '<'} SMA50)")
+
+    # Ação + breakeven
+    if rec == "BUY":
+        acao = "COMPRAR STRADDLE"
+        if custo:
+            be_up  = round(atm + custo, 5)
+            be_dn  = round(atm - custo, 5)
+            partes.append(f"→ {acao}: Call @{_fmt(atm,5)} + Put @{_fmt(atm,5)} | Custo: {_fmt(custo,5)} | Breakeven: >{be_up} ou <{be_dn}")
+        else:
+            partes.append(f"→ {acao}: Call @{_fmt(atm,5)} + Put @{_fmt(atm,5)}")
+    elif rec == "SELL":
+        acao = "VENDER STRADDLE"
+        if custo:
+            be_up = round(atm + custo, 5)
+            be_dn = round(atm - custo, 5)
+            partes.append(f"→ {acao}: Call @{_fmt(atm,5)} + Put @{_fmt(atm,5)} | Crédito: {_fmt(custo,5)} | Ganho máx se spot entre {be_dn}~{be_up}")
+        else:
+            partes.append(f"→ {acao}: Call @{_fmt(atm,5)} + Put @{_fmt(atm,5)}")
+    else:
+        partes.append(f"IV e técnico neutros — aguardar catalisador. Spot atual: {_fmt(spot,5)}")
+
+    return " | ".join(partes)
+
+
+def _motivo_strangle(rec: str, iv_rank: Optional[float], iv_media: Optional[float],
+                     tech: TechIndicators, custo: Optional[float],
+                     call_leg: OptionLeg, put_leg: OptionLeg) -> str:
+    partes = []
+    if iv_rank is not None:
+        partes.append(f"IV Rank {iv_rank:.0f}%")
+    elif iv_media:
+        partes.append(f"IV {iv_media*100:.2f}%")
+    if tech.sinal_tecnico == "BB_SQUEEZE":
+        partes.append("Bollinger squeeze — expansão iminente")
+    if tech.tendencia != "LATERAL":
+        partes.append(f"Tendência {tech.tendencia}")
+    if rec == "BUY":
+        acao = "COMPRAR STRANGLE"
+        if custo:
+            be_up = round(call_leg.strike + custo, 5)
+            be_dn = round(put_leg.strike - custo, 5)
+            partes.append(f"→ {acao}: Call @{_fmt(call_leg.strike,5)} (OTM) + Put @{_fmt(put_leg.strike,5)} (OTM) | Custo: {_fmt(custo,5)} | Breakeven: >{be_up} ou <{be_dn}")
+        else:
+            partes.append(f"→ {acao}: Call @{_fmt(call_leg.strike,5)} + Put @{_fmt(put_leg.strike,5)}")
+    elif rec == "SELL":
+        acao = "VENDER STRANGLE"
+        if custo:
+            be_up = round(call_leg.strike + custo, 5)
+            be_dn = round(put_leg.strike - custo, 5)
+            partes.append(f"→ {acao}: Call @{_fmt(call_leg.strike,5)} + Put @{_fmt(put_leg.strike,5)} | Crédito: {_fmt(custo,5)} | Lucro max entre {be_dn}~{be_up}")
+        else:
+            partes.append(f"→ {acao}: Call @{_fmt(call_leg.strike,5)} + Put @{_fmt(put_leg.strike,5)}")
+    else:
+        partes.append("Aguardar sinal mais claro de IV ou técnico.")
+    return " | ".join(partes)
+
+
+def _motivo_bull_spread(score: float, iv_skew: Optional[float], tech: TechIndicators,
+                        atm_call: OptionLeg, otm_call: OptionLeg) -> str:
+    partes = []
+    if iv_skew and iv_skew > 0:
+        partes.append(f"Skew de calls +{iv_skew*100:.2f}% (calls mais caras → mercado precifica alta)")
+    if tech.tendencia == "ALTA":
+        partes.append(f"Tendência de ALTA confirmada (SMA20 > SMA50)")
+    if tech.rsi_14:
+        if tech.rsi_14 < 65:
+            partes.append(f"RSI {tech.rsi_14:.0f} sem sobrecompra — upside ainda disponível")
+        else:
+            partes.append(f"RSI {tech.rsi_14:.0f} elevado — risco de reversão")
+    net   = round((atm_call.mid or 0) - (otm_call.mid or 0), 5)
+    lucro = round(otm_call.strike - atm_call.strike - net, 5) if net else None
+    be    = round(atm_call.strike + net, 5) if net else None
+    partes.append(
+        f"→ BULL CALL SPREAD: Compra Call @{_fmt(atm_call.strike,5)}, Vende Call @{_fmt(otm_call.strike,5)}"
+        + (f" | Custo líq: {_fmt(net,5)} | Breakeven: {_fmt(be,5)} | Max lucro: {_fmt(lucro,5)}" if lucro else "")
+    )
+    return " | ".join(partes)
+
+
+def _motivo_bear_spread(score: float, iv_skew: Optional[float], tech: TechIndicators,
+                        atm_put: OptionLeg, otm_put: OptionLeg) -> str:
+    partes = []
+    if iv_skew and iv_skew < 0:
+        partes.append(f"Skew de puts {iv_skew*100:.2f}% (puts mais caras → hedge comprado / pressão baixista)")
+    if tech.tendencia == "BAIXA":
+        partes.append("Tendência de BAIXA confirmada (SMA20 < SMA50)")
+    if tech.rsi_14:
+        if tech.rsi_14 > 35:
+            partes.append(f"RSI {tech.rsi_14:.0f} sem sobrevenda — downside disponível")
+        else:
+            partes.append(f"RSI {tech.rsi_14:.0f} baixo — risco de bounce")
+    net   = round((atm_put.mid or 0) - (otm_put.mid or 0), 5)
+    lucro = round(atm_put.strike - otm_put.strike - net, 5) if net else None
+    be    = round(atm_put.strike - net, 5) if net else None
+    partes.append(
+        f"→ BEAR PUT SPREAD: Compra Put @{_fmt(atm_put.strike,5)}, Vende Put @{_fmt(otm_put.strike,5)}"
+        + (f" | Custo líq: {_fmt(net,5)} | Breakeven: {_fmt(be,5)} | Max lucro: {_fmt(lucro,5)}" if lucro else "")
+    )
+    return " | ".join(partes)
+
+
+# ── Montagem de Signal ────────────────────────────────────────────────────────
+
+def _base_signal(chain: OptionsChain, tipo: str,
+                 call: OptionLeg, put: OptionLeg,
+                 tech: TechIndicators,
+                 strike_sec: Optional[float] = None) -> Signal:
+    iv_c   = call.iv
+    iv_p   = put.iv
+    iv_med = ((iv_c or 0) + (iv_p or 0)) / 2 if (iv_c or iv_p) else None
+    iv_med = iv_med if iv_med and iv_med > 0 else None
+    iv_sk  = round((iv_c or 0) - (iv_p or 0), 6) if (iv_c and iv_p) else None
+    custo  = round((call.mid or 0) + (put.mid or 0), 6) or None
+    pc     = _pc_ratio(chain)
+
+    return Signal(
+        par=chain.par, symbol=chain.symbol,
+        expiracao=_expiry_to_iso(chain.expiry),
+        tipo_sinal=tipo,
+        strike_principal=call.strike,
+        strike_secundario=strike_sec,
+        premio_call=call.mid or None,
+        premio_put=put.mid or None,
+        custo_total=custo,
+        delta_call=call.delta, delta_put=put.delta,
+        gamma=call.gamma, theta_call=call.theta, vega_call=call.vega,
+        iv_call=iv_c, iv_put=iv_p,
+        iv_media=round(iv_med, 6) if iv_med else None,
+        iv_skew=iv_sk,
+        spot_price=chain.spot,
+        volume_call=call.volume or None,
+        volume_put=put.volume or None,
+        oi_call=call.open_interest or None,
+        oi_put=put.open_interest or None,
+        score=50.0, recomendacao="NEUTRAL",
+        rsi_14=tech.rsi_14, sma20=tech.sma20, sma50=tech.sma50,
+        bb_width=tech.bb_width, tendencia=tech.tendencia,
+        pc_ratio=pc,
+    )
+
+
+# ── Ponto de entrada ──────────────────────────────────────────────────────────
+
+def generate_signals(chain: OptionsChain, tech: TechIndicators) -> list[Signal]:
+    spot  = chain.spot
+    calls = chain.calls
+    puts  = chain.puts
+
+    atm_call = _find_atm(calls, spot)
+    atm_put  = _find_atm(puts,  spot)
+    if not atm_call or not atm_put:
+        logger.warning("[%s] ATM não encontrado.", chain.symbol)
+        return []
+
+    otm_call = _find_otm_call(calls, atm_call.strike)
+    otm_put  = _find_otm_put(puts,  atm_put.strike)
+    signals: list[Signal] = []
+
+    # ── Straddle ──
+    s = _base_signal(chain, "straddle", atm_call, atm_put, tech)
+    s.score, s.recomendacao = _score_vol(None, s.iv_media, tech, "straddle")
+    s.strikes_recomendados  = f"Call @{_fmt(atm_call.strike,5)} + Put @{_fmt(atm_put.strike,5)} (ATM)"
+    s.motivo = _motivo_straddle(s.recomendacao, s.score, s.iv_media, None, tech,
+                                s.custo_total, atm_call.strike, spot)
+    signals.append(s)
+
+    # ── Strangle ──
+    if otm_call and otm_put:
+        s = _base_signal(chain, "strangle", otm_call, otm_put, tech,
+                         strike_sec=otm_put.strike)
+        s.score, s.recomendacao = _score_vol(None, s.iv_media, tech, "strangle")
+        s.strikes_recomendados  = f"Call @{_fmt(otm_call.strike,5)} (OTM) + Put @{_fmt(otm_put.strike,5)} (OTM)"
+        s.motivo = _motivo_strangle(s.recomendacao, None, s.iv_media, tech,
+                                    s.custo_total, otm_call, otm_put)
+        signals.append(s)
+
+    # ── Bull Call Spread ──
+    if otm_call:
+        s = _base_signal(chain, "bull_spread", atm_call, atm_put, tech,
+                         strike_sec=otm_call.strike)
+        s.score, s.recomendacao = _score_spread(s.iv_skew, tech, "bull_spread")
+        s.strikes_recomendados  = f"Compra Call @{_fmt(atm_call.strike,5)} + Vende Call @{_fmt(otm_call.strike,5)}"
+        s.motivo = _motivo_bull_spread(s.score, s.iv_skew, tech, atm_call, otm_call)
+        signals.append(s)
+
+    # ── Bear Put Spread ──
+    if otm_put:
+        s = _base_signal(chain, "bear_spread", atm_call, atm_put, tech,
+                         strike_sec=otm_put.strike)
+        s.score, s.recomendacao = _score_spread(s.iv_skew, tech, "bear_spread")
+        s.strikes_recomendados  = f"Compra Put @{_fmt(atm_put.strike,5)} + Vende Put @{_fmt(otm_put.strike,5)}"
+        s.motivo = _motivo_bear_spread(s.score, s.iv_skew, tech, atm_put, otm_put)
+        signals.append(s)
+
+    logger.info("[%s] %d sinais gerados.", chain.symbol, len(signals))
+    return signals

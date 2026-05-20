@@ -1,0 +1,53 @@
+"""Envia sinais calculados para o backend no Railway via POST /sinais/sync."""
+
+import logging
+from dataclasses import asdict
+
+import httpx
+
+from .config import RAILWAY_API_URL, SINAIS_API_KEY
+from .signal_engine import Signal
+
+logger = logging.getLogger(__name__)
+
+TIMEOUT = 30  # segundos
+
+
+def push_signals(signals: list[Signal], dry_run: bool = False) -> bool:
+    """
+    Faz POST de todos os sinais de uma rodada para o backend.
+    Se dry_run=True, apenas loga sem enviar.
+    Retorna True se bem-sucedido.
+    """
+    if not signals:
+        logger.info("Nenhum sinal para enviar.")
+        return True
+
+    payload = [asdict(s) for s in signals]
+
+    if dry_run:
+        logger.info("[DRY-RUN] %d sinais (não enviados):", len(payload))
+        for s in payload:
+            logger.info("  %s | %s | rec=%s | score=%.1f | tend=%s | rsi=%.1f | strikes=%s",
+                        s["par"], s["tipo_sinal"], s["recomendacao"], s.get("score") or 0,
+                        s.get("tendencia") or "—",
+                        s.get("rsi_14") or 0,
+                        s.get("strikes_recomendados") or "—")
+            if s.get("motivo"):
+                logger.info("    motivo: %s", s["motivo"])
+        return True
+
+    url = f"{RAILWAY_API_URL.rstrip('/')}/sinais/sync"
+    headers = {"X-Api-Key": SINAIS_API_KEY, "Content-Type": "application/json"}
+
+    try:
+        resp = httpx.post(url, json=payload, headers=headers, timeout=TIMEOUT)
+        resp.raise_for_status()
+        data = resp.json()
+        logger.info("Railway: %d sinais gravados.", data.get("criados", "?"))
+        return True
+    except httpx.HTTPStatusError as e:
+        logger.error("Erro HTTP ao enviar sinais: %s — %s", e.response.status_code, e.response.text)
+    except Exception as e:
+        logger.error("Falha ao conectar ao Railway: %s", e)
+    return False

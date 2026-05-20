@@ -61,6 +61,9 @@ export default function Layout({ children }) {
           <button className={ativo('/upload')} onClick={() => navegar('/upload')}>
             <span>↑</span> Novo Upload
           </button>
+          <button className={ativo('/sinais')} onClick={() => navegar('/sinais')}>
+            <span>◈</span> Sinais
+          </button>
           {user?.is_admin && (
             <button className={ativo('/admin')} onClick={() => navegar('/admin')}>
               <span>⚙</span> Admin

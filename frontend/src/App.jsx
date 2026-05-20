@@ -11,6 +11,7 @@ import Upgrade      from './pages/Upgrade'
 import LandingPage  from './pages/LandingPage'
 import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword  from './pages/ResetPassword'
+import Sinais         from './pages/Sinais'
 
 function RotaProtegida({ children }) {
   const { user, loading } = useAuth()
@@ -45,6 +46,7 @@ function AppRoutes() {
       <Route path="/apuracao/:id"  element={<RotaProtegida><Apuracao /></RotaProtegida>} />
       <Route path="/upgrade"       element={<RotaProtegida><Upgrade /></RotaProtegida>} />
       <Route path="/admin"         element={<RotaAdmin><Admin /></RotaAdmin>} />
+      <Route path="/sinais"        element={<RotaProtegida><Sinais /></RotaProtegida>} />
       <Route path="*"              element={<Navigate to="/" replace />} />
     </Routes>
   )
