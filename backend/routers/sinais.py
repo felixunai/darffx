@@ -144,14 +144,21 @@ def _recalcular_score(tipo_sinal: str, iv_rank: Optional[float],
     return 50.0, "NEUTRAL"
 
 
-def _calcular_iv_rank(db: Session, par: str, iv_media_atual: Optional[float]) -> Optional[float]:
-    """Calcula IV Rank percentual usando min/max dos últimos 30 dias para o par."""
+def _calcular_iv_rank(db: Session, par: str, tipo_sinal: str, iv_media_atual: Optional[float]) -> Optional[float]:
+    """Calcula IV Rank percentual usando min/max dos últimos 30 dias para o par × tipo_sinal.
+    Filtra por tipo_sinal para evitar que straddle e strangle (iv_media diferentes) contaminem
+    o mesmo pool de min/max e gerem ranks contraditórios com poucos dados."""
     if iv_media_atual is None:
         return None
     cutoff = datetime.utcnow() - timedelta(days=30)
     resultado = (
         db.query(func.min(SinalOpcao.iv_media), func.max(SinalOpcao.iv_media))
-        .filter(SinalOpcao.par == par, SinalOpcao.criado_em >= cutoff, SinalOpcao.iv_media.isnot(None))
+        .filter(
+            SinalOpcao.par == par,
+            SinalOpcao.tipo_sinal == tipo_sinal,
+            SinalOpcao.criado_em >= cutoff,
+            SinalOpcao.iv_media.isnot(None),
+        )
         .one()
     )
     iv_min, iv_max = resultado
@@ -187,7 +194,7 @@ def sync_sinais(
             except ValueError:
                 pass
 
-        iv_rank = _calcular_iv_rank(db, s.par, s.iv_media)
+        iv_rank = _calcular_iv_rank(db, s.par, s.tipo_sinal, s.iv_media)
 
         # Recalcula score/rec com o IV Rank real (o agente envia score provisório sem rank)
         score_final, rec_final = _recalcular_score(

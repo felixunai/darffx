@@ -20,7 +20,7 @@ PAIRS = [
     {"symbol": "JPY", "par": "USD/JPY", "exchange": "CME", "invert_spot": True},   # IB: JPY, tradingClass J7
     {"symbol": "CAD", "par": "USD/CAD", "exchange": "CME", "invert_spot": True},
     {"symbol": "AUD", "par": "AUD/USD", "exchange": "CME", "invert_spot": False},
-    {"symbol": "CHF", "par": "CHF/USD", "exchange": "CME", "invert_spot": False},
+    {"symbol": "CHF", "par": "USD/CHF", "exchange": "CME", "invert_spot": True},
     # MXN/USD e EUR/JPY não têm FOP confirmado na CME/IB — omitidos
 ]
 
