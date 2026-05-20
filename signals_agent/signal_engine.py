@@ -46,6 +46,10 @@ class Signal:
     bb_width: Optional[float] = None
     tendencia: str = "LATERAL"
     pc_ratio: Optional[float] = None
+    # Métricas de risco para strangle vendido
+    dte: int = 0
+    prob_profit: Optional[float] = None   # 0-100 %
+    expected_move: Optional[float] = None  # movimento 1σ esperado até vencimento
 
 
 def _expiry_to_iso(expiry: str) -> str:
@@ -64,6 +68,46 @@ def _find_otm_call(calls: list[OptionLeg], atm_strike: float) -> Optional[Option
 def _find_otm_put(puts: list[OptionLeg], atm_strike: float) -> Optional[OptionLeg]:
     below = [p for p in puts if p.strike < atm_strike]
     return below[-1] if below else None
+
+
+# Delta alvo para strangle vendido semanal: 15-20 delta
+STRANGLE_DELTA_TARGET = 0.16
+
+
+def _find_delta_call(calls: list[OptionLeg], atm_strike: float,
+                     target_delta: float = STRANGLE_DELTA_TARGET) -> Optional[OptionLeg]:
+    """Busca a call OTM cujo delta é mais próximo do alvo (ex: 0.16 = delta 16)."""
+    otm = [c for c in calls if c.strike > atm_strike and c.delta is not None and c.delta > 0]
+    if not otm:
+        return _find_otm_call(calls, atm_strike)
+    return min(otm, key=lambda c: abs((c.delta or 0) - target_delta))
+
+
+def _find_delta_put(puts: list[OptionLeg], atm_strike: float,
+                    target_delta: float = STRANGLE_DELTA_TARGET) -> Optional[OptionLeg]:
+    """Busca a put OTM cujo delta absoluto é mais próximo do alvo (ex: 0.16)."""
+    otm = [p for p in puts if p.strike < atm_strike and p.delta is not None and p.delta < 0]
+    if not otm:
+        return _find_otm_put(puts, atm_strike)
+    return min(otm, key=lambda p: abs(abs(p.delta or 0) - target_delta))
+
+
+def _calc_pop(delta_call: Optional[float], delta_put: Optional[float]) -> Optional[float]:
+    """
+    POP do strangle vendido ≈ 1 - |delta_call| - |delta_put|.
+    Aproximação de Black-Scholes: delta ≈ probabilidade de ser exercido.
+    """
+    if delta_call is None or delta_put is None:
+        return None
+    pop = 1.0 - abs(delta_call) - abs(delta_put)
+    return round(max(0.0, min(1.0, pop)) * 100, 1)
+
+
+def _calc_expected_move(spot: float, iv: Optional[float], dte: int) -> Optional[float]:
+    """Movimento 1σ esperado até vencimento: spot × IV × √(DTE/365)."""
+    if not iv or dte <= 0:
+        return None
+    return round(spot * iv * (dte / 365) ** 0.5, 5)
 
 
 def _pc_ratio(chain: OptionsChain) -> Optional[float]:
@@ -200,34 +244,50 @@ def _motivo_straddle(rec: str, score: float, iv_media: Optional[float],
 
 def _motivo_strangle(rec: str, iv_rank: Optional[float], iv_media: Optional[float],
                      tech: TechIndicators, custo: Optional[float],
-                     call_leg: OptionLeg, put_leg: OptionLeg) -> str:
+                     call_leg: OptionLeg, put_leg: OptionLeg,
+                     dte: int = 0, pop: Optional[float] = None,
+                     expected_move: Optional[float] = None,
+                     spot: Optional[float] = None) -> str:
     partes = []
     if iv_rank is not None:
         partes.append(f"IV Rank {iv_rank:.0f}%")
     elif iv_media:
         partes.append(f"IV {iv_media*100:.2f}%")
+    if dte:
+        partes.append(f"DTE={dte}")
+    if pop is not None:
+        partes.append(f"POP≈{pop:.0f}% (prob. de lucro)")
+    if expected_move and spot:
+        be_range_lo = round(spot - expected_move, 5)
+        be_range_hi = round(spot + expected_move, 5)
+        partes.append(f"Mov. esperado ±{_fmt(expected_move,5)} → faixa {be_range_lo}~{be_range_hi}")
     if tech.sinal_tecnico == "BB_SQUEEZE":
-        partes.append("Bollinger squeeze — expansão iminente")
-    if tech.tendencia != "LATERAL":
-        partes.append(f"Tendência {tech.tendencia}")
-    if rec == "BUY":
-        acao = "COMPRAR STRANGLE"
+        partes.append("Bollinger squeeze — ATENÇÃO: expansão de vol esperada, risco para strangle vendido")
+    elif tech.tendencia != "LATERAL":
+        partes.append(f"Tendência {tech.tendencia} — monitorar breakout")
+
+    if rec == "SELL":
         if custo:
             be_up = round(call_leg.strike + custo, 5)
             be_dn = round(put_leg.strike - custo, 5)
-            partes.append(f"→ {acao}: Call @{_fmt(call_leg.strike,5)} (OTM) + Put @{_fmt(put_leg.strike,5)} (OTM) | Custo: {_fmt(custo,5)} | Breakeven: >{be_up} ou <{be_dn}")
+            partes.append(
+                f"→ VENDER STRANGLE: Call @{_fmt(call_leg.strike,5)} + Put @{_fmt(put_leg.strike,5)}"
+                f" | Crédito: {_fmt(custo,5)} | Lucro máx se spot entre {be_dn}~{be_up}"
+            )
         else:
-            partes.append(f"→ {acao}: Call @{_fmt(call_leg.strike,5)} + Put @{_fmt(put_leg.strike,5)}")
-    elif rec == "SELL":
-        acao = "VENDER STRANGLE"
+            partes.append(f"→ VENDER STRANGLE: Call @{_fmt(call_leg.strike,5)} + Put @{_fmt(put_leg.strike,5)}")
+    elif rec == "BUY":
         if custo:
             be_up = round(call_leg.strike + custo, 5)
             be_dn = round(put_leg.strike - custo, 5)
-            partes.append(f"→ {acao}: Call @{_fmt(call_leg.strike,5)} + Put @{_fmt(put_leg.strike,5)} | Crédito: {_fmt(custo,5)} | Lucro max entre {be_dn}~{be_up}")
+            partes.append(
+                f"→ COMPRAR STRANGLE: Call @{_fmt(call_leg.strike,5)} + Put @{_fmt(put_leg.strike,5)}"
+                f" | Custo: {_fmt(custo,5)} | Breakeven: >{be_up} ou <{be_dn}"
+            )
         else:
-            partes.append(f"→ {acao}: Call @{_fmt(call_leg.strike,5)} + Put @{_fmt(put_leg.strike,5)}")
+            partes.append(f"→ COMPRAR STRANGLE: Call @{_fmt(call_leg.strike,5)} + Put @{_fmt(put_leg.strike,5)}")
     else:
-        partes.append("Aguardar sinal mais claro de IV ou técnico.")
+        partes.append("IV neutra — aguardar IV Rank > 70 (vender) ou < 30 (comprar).")
     return " | ".join(partes)
 
 
@@ -288,6 +348,8 @@ def _base_signal(chain: OptionsChain, tipo: str,
     iv_sk  = round((iv_c or 0) - (iv_p or 0), 6) if (iv_c and iv_p) else None
     custo  = round((call.mid or 0) + (put.mid or 0), 6) or None
     pc     = _pc_ratio(chain)
+    pop    = _calc_pop(call.delta, put.delta)
+    em     = _calc_expected_move(chain.spot, iv_med, chain.dte)
 
     return Signal(
         par=chain.par, symbol=chain.symbol,
@@ -312,6 +374,9 @@ def _base_signal(chain: OptionsChain, tipo: str,
         rsi_14=tech.rsi_14, sma20=tech.sma20, sma50=tech.sma50,
         bb_width=tech.bb_width, tendencia=tech.tendencia,
         pc_ratio=pc,
+        dte=chain.dte,
+        prob_profit=pop,
+        expected_move=em,
     )
 
 
@@ -340,14 +405,25 @@ def generate_signals(chain: OptionsChain, tech: TechIndicators) -> list[Signal]:
                                 s.custo_total, atm_call.strike, spot)
     signals.append(s)
 
-    # ── Strangle ──
-    if otm_call and otm_put:
-        s = _base_signal(chain, "strangle", otm_call, otm_put, tech,
-                         strike_sec=otm_put.strike)
+    # ── Strangle (delta-based: alvo delta ~16 para strangle vendido semanal) ──
+    delta_call = _find_delta_call(calls, atm_call.strike)
+    delta_put  = _find_delta_put(puts,  atm_put.strike)
+    if delta_call and delta_put:
+        s = _base_signal(chain, "strangle", delta_call, delta_put, tech,
+                         strike_sec=delta_put.strike)
         s.score, s.recomendacao = _score_vol(None, s.iv_media, tech, "strangle")
-        s.strikes_recomendados  = f"Call @{_fmt(otm_call.strike,5)} (OTM) + Put @{_fmt(otm_put.strike,5)} (OTM)"
+        d_c = abs(delta_call.delta or 0)
+        d_p = abs(delta_put.delta or 0)
+        s.strikes_recomendados = (
+            f"Vende Call @{_fmt(delta_call.strike,5)} (Δ{d_c:.2f}) + "
+            f"Vende Put @{_fmt(delta_put.strike,5)} (Δ{d_p:.2f}) | "
+            f"DTE={chain.dte} | POP≈{s.prob_profit:.0f}%" if s.prob_profit else
+            f"Vende Call @{_fmt(delta_call.strike,5)} + Vende Put @{_fmt(delta_put.strike,5)} | DTE={chain.dte}"
+        )
         s.motivo = _motivo_strangle(s.recomendacao, None, s.iv_media, tech,
-                                    s.custo_total, otm_call, otm_put)
+                                    s.custo_total, delta_call, delta_put,
+                                    dte=chain.dte, pop=s.prob_profit,
+                                    expected_move=s.expected_move, spot=chain.spot)
         signals.append(s)
 
     # ── Bull Call Spread ──

@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional
 
 from ib_insync import Contract, FuturesOption, IB
@@ -35,6 +35,7 @@ class OptionsChain:
     par: str
     expiry: str
     spot: float
+    dte: int = 0           # dias até vencimento
     calls: list[OptionLeg] = field(default_factory=list)
     puts: list[OptionLeg] = field(default_factory=list)
 
@@ -45,6 +46,11 @@ def _nearest_expiry(expirations: list[str]) -> str:
     if not futuros:
         raise ValueError("Nenhum vencimento futuro encontrado.")
     return futuros[0]
+
+
+def _calc_dte(expiry: str) -> int:
+    exp_date = datetime.strptime(expiry, "%Y%m%d").date()
+    return max(0, (exp_date - date.today()).days)
 
 
 def _find_future_with_options(ib: IB, symbol: str, exchange: str):
@@ -123,8 +129,8 @@ def fetch_chain(ib: IB, symbol: str, par: str, exchange: str = "CME", invert_spo
         logger.warning("[%s] Erro ao buscar spot: %s", symbol, e)
         return None
 
-    # 3. Os 20 strikes mais próximos do ATM
-    atm_strikes = sorted(strikes, key=lambda s: abs(s - spot_raw))[:20]
+    # 3. Os 30 strikes mais próximos do ATM (mais cobertura para achar delta 15 OTM)
+    atm_strikes = sorted(strikes, key=lambda s: abs(s - spot_raw))[:30]
 
     # 4. Buscar preços e Greeks
     ib.reqMarketDataType(3)
@@ -187,11 +193,16 @@ def fetch_chain(ib: IB, symbol: str, par: str, exchange: str = "CME", invert_spo
     logger.info("[%s] Cadeia OK: expiry=%s spot=%.5f calls=%d puts=%d",
                 symbol, expiry, spot, len(liquid_calls), len(liquid_puts))
 
+    dte = _calc_dte(expiry)
+    logger.info("[%s] Cadeia OK: expiry=%s DTE=%d spot=%.5f calls=%d puts=%d",
+                symbol, expiry, dte, spot, len(liquid_calls), len(liquid_puts))
+
     return OptionsChain(
         symbol=symbol,
         par=par,
         expiry=expiry,
         spot=spot,
+        dte=dte,
         calls=sorted(liquid_calls, key=lambda l: l.strike),
         puts=sorted(liquid_puts,  key=lambda l: l.strike),
     )

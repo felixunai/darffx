@@ -48,6 +48,9 @@ class SinalPayload(BaseModel):
     pc_ratio: Optional[float] = None
     motivo: Optional[str] = None
     strikes_recomendados: Optional[str] = None
+    dte: Optional[int] = None
+    prob_profit: Optional[float] = None
+    expected_move: Optional[float] = None
 
 
 # ── Schemas de saída (Railway → frontend) ───────────────────────────────────
@@ -88,6 +91,9 @@ class SinalOut(BaseModel):
     pc_ratio: Optional[float]
     motivo: Optional[str]
     strikes_recomendados: Optional[str]
+    dte: Optional[int]
+    prob_profit: Optional[float]
+    expected_move: Optional[float]
     criado_em: str
 
     class Config:
@@ -167,6 +173,9 @@ def sync_sinais(
             pc_ratio=s.pc_ratio,
             motivo=s.motivo,
             strikes_recomendados=s.strikes_recomendados,
+            dte=s.dte,
+            prob_profit=s.prob_profit,
+            expected_move=s.expected_move,
         ))
         criados += 1
 
@@ -257,5 +266,8 @@ def _to_out(s: SinalOpcao) -> SinalOut:
         pc_ratio=s.pc_ratio,
         motivo=s.motivo,
         strikes_recomendados=s.strikes_recomendados,
+        dte=s.dte,
+        prob_profit=s.prob_profit,
+        expected_move=s.expected_move,
         criado_em=s.criado_em.isoformat() if s.criado_em else "",
     )

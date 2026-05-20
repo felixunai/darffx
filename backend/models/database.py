@@ -191,4 +191,8 @@ class SinalOpcao(Base):
     # Explicação humana
     motivo            = Column(String(700))  # texto explicando o sinal
     strikes_recomendados = Column(String(250))  # strikes sugeridos formatados
+    # Métricas de risco para strangle vendido
+    dte               = Column(Integer, default=0)   # dias até vencimento
+    prob_profit       = Column(Float)                 # POP % (0-100)
+    expected_move     = Column(Float)                 # mov. 1σ esperado até vencimento
     criado_em         = Column(DateTime, default=datetime.utcnow, index=True)

@@ -40,6 +40,8 @@ const COL_TIPS = {
   'Atualizado':   'Última vez que o agente local enviou este sinal.',
 }
 
+const SCORE_MIN_CLARO = 62
+
 function ColTh({ label, style = {} }) {
   const [show, setShow] = useState(false)
   const tip = COL_TIPS[label]
@@ -168,6 +170,70 @@ function ExpandedDetail({ s, onHistorico }) {
               <div style={{ fontFamily: 'monospace', fontSize: 13, color: 'var(--accent)', fontWeight: 700 }}>
                 {s.strikes_recomendados}
               </div>
+            </div>
+          )}
+
+          {/* Painel de risco — strangle vendido */}
+          {s.tipo_sinal === 'strangle' && (s.prob_profit != null || s.expected_move != null || s.dte) && (
+            <div style={{
+              display: 'flex', gap: 10, flexWrap: 'wrap',
+            }}>
+              {s.dte > 0 && (
+                <div style={{
+                  flex: '1 1 100px', background: 'var(--surface)', borderRadius: 8,
+                  padding: '10px 14px', border: '1px solid var(--border)', textAlign: 'center',
+                }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>DTE</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: s.dte <= 7 ? '#FFB347' : 'var(--text)' }}>
+                    {s.dte}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>dias</div>
+                </div>
+              )}
+              {s.prob_profit != null && (
+                <div style={{
+                  flex: '1 1 120px', background: 'var(--surface)', borderRadius: 8,
+                  padding: '10px 14px', border: `1px solid ${s.prob_profit >= 65 ? 'rgba(0,229,160,0.4)' : 'var(--border)'}`,
+                  textAlign: 'center',
+                }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>POP</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: s.prob_profit >= 65 ? '#00E5A0' : s.prob_profit >= 50 ? '#FFB347' : '#FF4C6A' }}>
+                    {s.prob_profit.toFixed(0)}%
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>prob. lucro</div>
+                </div>
+              )}
+              {s.expected_move != null && (
+                <div style={{
+                  flex: '1 1 160px', background: 'var(--surface)', borderRadius: 8,
+                  padding: '10px 14px', border: '1px solid var(--border)', textAlign: 'center',
+                }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Mov. Esperado (1σ)</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>
+                    ±{fmt(s.expected_move)}
+                  </div>
+                  {s.spot_price && (
+                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>
+                      {fmt(s.spot_price - s.expected_move)} ~ {fmt(s.spot_price + s.expected_move)}
+                    </div>
+                  )}
+                </div>
+              )}
+              {s.custo_total != null && s.strike_principal != null && s.strike_secundario != null && (
+                <div style={{
+                  flex: '1 1 200px', background: 'var(--surface)', borderRadius: 8,
+                  padding: '10px 14px', border: '1px solid rgba(255,76,106,0.3)', textAlign: 'center',
+                }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Breakeven (vendido)</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#FF4C6A' }}>
+                    &lt; {fmt(s.strike_secundario - s.custo_total)}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0' }}>ou</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#FF4C6A' }}>
+                    &gt; {fmt(s.strike_principal + s.custo_total)}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
