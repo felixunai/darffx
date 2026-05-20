@@ -22,6 +22,48 @@ const TEND_CONFIG = {
   LATERAL: { color: '#8E99A8', label: '→ LATERAL' },
 }
 
+// Tooltips explicativos de cada coluna
+const COL_TIPS = {
+  'Par':          'Par de moedas negociado na CME via IBKR.',
+  'Tipo':         'Estrutura de opções: Straddle (compra call+put ATM), Strangle (compra call+put OTM), Bull Spread (trava de alta em calls), Bear Spread (trava de baixa em puts).',
+  'Spot':         'Preço atual do futuro subjacente na CME.',
+  'Strike ATM':   'Strike At-the-Money — o mais próximo do spot. Base das estruturas de volatilidade.',
+  'Strike OTM':   'Strike Out-of-the-Money — afastado do spot. Usado em strangle e spreads.',
+  'IV Média':     'Volatilidade Implícita média entre call e put selecionadas. Quanto maior, mais cara a proteção/especulação.',
+  'IV Rank 30d':  'Percentil da IV atual vs. os últimos 30 dias (0=mínimo histórico, 100=máximo). Alto (>70) = opções caras → vender vol. Baixo (<30) = opções baratas → comprar vol. "acum." = dados insuficientes ainda.',
+  'Tendência':    'Direção técnica do futuro: ALTA (spot > SMA20 > SMA50), BAIXA (spot < SMA20 < SMA50), LATERAL.',
+  'Delta C/P':    'Delta da call / Delta da put. Mede a sensibilidade ao preço do subjacente. Call ATM ≈ 0.50, Put ATM ≈ -0.50.',
+  'Custo':        'Prêmio total da estrutura em USD por unidade do contrato (soma dos mid-prices).',
+  'Score':        'Qualidade do sinal de 0 a 100, combinando IV Rank, análise técnica e confirmações. Acima de 65 = sinal relevante.',
+  'Rec.':         'Recomendação: COMPRAR = comprar volatilidade (barata), VENDER = vender volatilidade (cara), BULL/BEAR = direcional.',
+  'Venc.':        'Data de vencimento do contrato de opção.',
+  'Atualizado':   'Última vez que o agente local enviou este sinal.',
+}
+
+function ColTh({ label, style = {} }) {
+  const [show, setShow] = useState(false)
+  const tip = COL_TIPS[label]
+  return (
+    <th
+      style={{ padding: '8px 10px', position: 'relative', cursor: tip ? 'help' : 'default', ...style }}
+      onMouseEnter={() => tip && setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      {label}{tip && <span style={{ marginLeft: 3, fontSize: 9, color: 'var(--muted)', verticalAlign: 'super' }}>?</span>}
+      {show && tip && (
+        <div style={{
+          position: 'absolute', top: '110%', left: 0, zIndex: 50, width: 240,
+          background: '#1e2533', border: '1px solid var(--border)', borderRadius: 8,
+          padding: '8px 10px', fontSize: 11, color: 'var(--text)', lineHeight: 1.5,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.4)', pointerEvents: 'none',
+        }}>
+          {tip}
+        </div>
+      )}
+    </th>
+  )
+}
+
 function Badge({ rec }) {
   const cfg = REC_CONFIG[rec] || REC_CONFIG.NEUTRAL
   return (
@@ -37,9 +79,7 @@ function Badge({ rec }) {
 
 function TendBadge({ tend }) {
   const cfg = TEND_CONFIG[tend] || TEND_CONFIG.LATERAL
-  return (
-    <span style={{ fontSize: 11, fontWeight: 600, color: cfg.color }}>{cfg.label}</span>
-  )
+  return <span style={{ fontSize: 11, fontWeight: 600, color: cfg.color }}>{cfg.label}</span>
 }
 
 function fmt(v, dec = 5) {
@@ -115,10 +155,8 @@ function HistoricoModal({ par, tipo, onClose }) {
 function ExpandedDetail({ s, onHistorico }) {
   return (
     <tr>
-      <td colSpan={14} style={{ padding: 0, background: 'var(--surface2)' }}>
+      <td colSpan={15} style={{ padding: 0, background: 'var(--surface2)' }}>
         <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-
-          {/* Strikes recomendados */}
           {s.strikes_recomendados && (
             <div style={{
               background: 'var(--surface)', borderRadius: 8, padding: '10px 14px',
@@ -134,7 +172,6 @@ function ExpandedDetail({ s, onHistorico }) {
           )}
 
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-            {/* Motivo */}
             {s.motivo && (
               <div style={{
                 flex: '1 1 340px', background: 'var(--surface)', borderRadius: 8,
@@ -143,13 +180,10 @@ function ExpandedDetail({ s, onHistorico }) {
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   Análise
                 </div>
-                <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text)' }}>
-                  {s.motivo}
-                </div>
+                <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text)' }}>{s.motivo}</div>
               </div>
             )}
 
-            {/* Indicadores técnicos */}
             <div style={{
               flex: '0 0 240px', background: 'var(--surface)', borderRadius: 8,
               padding: '10px 14px', border: '1px solid var(--border)',
@@ -211,6 +245,8 @@ function ExpandedDetail({ s, onHistorico }) {
   )
 }
 
+const SCORE_MIN_CLARO = 62
+
 export default function Sinais() {
   const { user } = useAuth()
   const navigate  = useNavigate()
@@ -221,7 +257,8 @@ export default function Sinais() {
   const [erro, setErro]               = useState(null)
   const [filtroTipo, setFiltroTipo]   = useState('Todos')
   const [filtroPar, setFiltroPar]     = useState('Todos')
-  const [modal, setModal]             = useState(null)   // { par, tipo }
+  const [apenasClaro, setApenasClaro] = useState(false)
+  const [modal, setModal]             = useState(null)
   const [expandedId, setExpandedId]   = useState(null)
 
   const carregar = useCallback(() => {
@@ -237,10 +274,13 @@ export default function Sinais() {
   useEffect(() => { carregar() }, [carregar])
 
   const filtrados = sinais.filter(s => {
-    const okTipo = filtroTipo === 'Todos' || s.tipo_sinal === filtroTipo
-    const okPar  = filtroPar  === 'Todos' || s.par === filtroPar
-    return okTipo && okPar
+    if (filtroTipo !== 'Todos' && s.tipo_sinal !== filtroTipo) return false
+    if (filtroPar  !== 'Todos' && s.par !== filtroPar)         return false
+    if (apenasClaro && (s.recomendacao === 'NEUTRAL' || (s.score || 0) < SCORE_MIN_CLARO)) return false
+    return true
   })
+
+  const nClaros = sinais.filter(s => s.recomendacao !== 'NEUTRAL' && (s.score || 0) >= SCORE_MIN_CLARO).length
 
   return (
     <Layout>
@@ -260,7 +300,6 @@ export default function Sinais() {
           )}
         </div>
 
-        {/* Paywall */}
         {!isPaid && (
           <div style={{
             background: 'var(--surface)', border: '1px solid var(--border)',
@@ -303,20 +342,64 @@ export default function Sinais() {
               >
                 {PARES.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
+
+              {/* Toggle sinais claros */}
+              <label style={{
+                display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                padding: '6px 12px', borderRadius: 8,
+                background: apenasClaro ? 'rgba(0,229,160,0.12)' : 'var(--surface)',
+                border: `1px solid ${apenasClaro ? '#00E5A0' : 'var(--border)'}`,
+                fontSize: 13, color: apenasClaro ? '#00E5A0' : 'var(--text)',
+                transition: 'all 0.15s',
+              }}>
+                <input
+                  type="checkbox"
+                  checked={apenasClaro}
+                  onChange={e => setApenasClaro(e.target.checked)}
+                  style={{ accentColor: '#00E5A0', width: 14, height: 14 }}
+                />
+                Apenas sinais claros
+                {nClaros > 0 && (
+                  <span style={{
+                    background: '#00E5A0', color: '#000', fontWeight: 700,
+                    fontSize: 10, padding: '1px 6px', borderRadius: 10,
+                  }}>
+                    {nClaros}
+                  </span>
+                )}
+              </label>
+
               <span style={{ color: 'var(--muted)', fontSize: 12 }}>
                 {filtrados.length} sinal{filtrados.length !== 1 ? 'is' : ''}
               </span>
               <span style={{ color: 'var(--muted)', fontSize: 11, marginLeft: 'auto' }}>
-                Clique em uma linha para ver análise completa
+                Passe o mouse nos títulos das colunas para explicações · Clique na linha para análise completa
               </span>
             </div>
+
+            {/* Aviso IV Rank acumulando */}
+            {!loading && sinais.length > 0 && sinais.every(s => s.iv_rank_30d == null) && (
+              <div style={{
+                background: 'rgba(255,179,71,0.08)', border: '1px solid rgba(255,179,71,0.3)',
+                borderRadius: 8, padding: '10px 14px', marginBottom: 16,
+                fontSize: 13, color: '#FFB347', display: 'flex', gap: 8, alignItems: 'center',
+              }}>
+                <span>⏳</span>
+                <span>
+                  <strong>IV Rank acumulando dados.</strong> Os sinais ficam todos NEUTRO até ter ~30 dias de histórico.
+                  Continue rodando o agente diariamente — os sinais vão ficar mais precisos com o tempo.
+                </span>
+              </div>
+            )}
 
             {loading && <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 48 }}>Carregando sinais…</div>}
             {erro    && <div style={{ textAlign: 'center', color: 'var(--danger)', padding: 24 }}>{erro}</div>}
 
             {!loading && !erro && filtrados.length === 0 && (
               <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 48 }}>
-                Nenhum sinal disponível. O agente local precisa estar rodando com o TWS aberto.
+                {apenasClaro
+                  ? 'Nenhum sinal claro no momento. O IV Rank ainda está acumulando dados (≈30 dias).'
+                  : 'Nenhum sinal disponível. O agente local precisa estar rodando com o TWS aberto.'}
               </div>
             )}
 
@@ -325,26 +408,27 @@ export default function Sinais() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--muted)', textAlign: 'left' }}>
-                      <th style={{ padding: '8px 10px' }}>Par</th>
-                      <th style={{ padding: '8px 10px' }}>Tipo</th>
-                      <th style={{ padding: '8px 10px' }}>Spot</th>
-                      <th style={{ padding: '8px 10px' }}>Strike ATM</th>
-                      <th style={{ padding: '8px 10px' }}>Strike OTM</th>
-                      <th style={{ padding: '8px 10px' }}>IV Média</th>
-                      <th style={{ padding: '8px 10px' }}>IV Rank 30d</th>
-                      <th style={{ padding: '8px 10px' }}>Tendência</th>
-                      <th style={{ padding: '8px 10px' }}>Delta C/P</th>
-                      <th style={{ padding: '8px 10px' }}>Custo</th>
-                      <th style={{ padding: '8px 10px' }}>Score</th>
-                      <th style={{ padding: '8px 10px' }}>Rec.</th>
-                      <th style={{ padding: '8px 10px' }}>Venc.</th>
-                      <th style={{ padding: '8px 10px' }}>Atualizado</th>
+                      <ColTh label="Par" />
+                      <ColTh label="Tipo" />
+                      <ColTh label="Spot" />
+                      <ColTh label="Strike ATM" />
+                      <ColTh label="Strike OTM" />
+                      <ColTh label="IV Média" />
+                      <ColTh label="IV Rank 30d" />
+                      <ColTh label="Tendência" />
+                      <ColTh label="Delta C/P" />
+                      <ColTh label="Custo" />
+                      <ColTh label="Score" />
+                      <ColTh label="Rec." />
+                      <ColTh label="Venc." />
+                      <ColTh label="Atualizado" />
                     </tr>
                   </thead>
                   <tbody>
                     {filtrados.map(s => {
                       const isExpanded = expandedId === s.id
                       const hasDetail  = s.motivo || s.strikes_recomendados || s.tendencia
+                      const isClear    = s.recomendacao !== 'NEUTRAL' && (s.score || 0) >= SCORE_MIN_CLARO
                       return (
                         <>
                           <tr
@@ -354,7 +438,12 @@ export default function Sinais() {
                               borderBottom: isExpanded ? 'none' : '1px solid var(--border)',
                               verticalAlign: 'middle',
                               cursor: hasDetail ? 'pointer' : 'default',
-                              background: isExpanded ? 'var(--surface2)' : 'transparent',
+                              background: isExpanded
+                                ? 'var(--surface2)'
+                                : isClear
+                                  ? 'rgba(0,229,160,0.04)'
+                                  : 'transparent',
+                              borderLeft: isClear ? '3px solid #00E5A0' : '3px solid transparent',
                             }}
                           >
                             <td style={{ padding: '10px 10px', fontWeight: 700 }}>
@@ -374,7 +463,7 @@ export default function Sinais() {
                             <td style={{ padding: '10px 10px' }}>{fmtPct(s.iv_media)}</td>
                             <td style={{ padding: '10px 10px' }}>
                               {s.iv_rank_30d != null
-                                ? <span style={{ color: s.iv_rank_30d > 70 ? '#FF4C6A' : s.iv_rank_30d < 30 ? '#00E5A0' : 'var(--text)' }}>
+                                ? <span style={{ color: s.iv_rank_30d > 70 ? '#FF4C6A' : s.iv_rank_30d < 30 ? '#00E5A0' : 'var(--text)', fontWeight: 600 }}>
                                     {s.iv_rank_30d.toFixed(1)}
                                   </span>
                                 : <span style={{ color: 'var(--muted)', fontSize: 11 }}>acum.</span>
@@ -388,19 +477,21 @@ export default function Sinais() {
                             </td>
                             <td style={{ padding: '10px 10px' }}>{fmt(s.custo_total, 6)}</td>
                             <td style={{ padding: '10px 10px' }}>
-                              <div style={{
-                                display: 'inline-block', width: 36, height: 6,
-                                background: 'var(--surface2)', borderRadius: 3, overflow: 'hidden',
-                              }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <div style={{
-                                  height: '100%', borderRadius: 3,
-                                  width: `${s.score || 0}%`,
-                                  background: s.recomendacao === 'NEUTRAL' ? 'var(--muted)' : 'var(--accent)',
-                                }} />
+                                  width: 36, height: 6,
+                                  background: 'var(--surface2)', borderRadius: 3, overflow: 'hidden',
+                                }}>
+                                  <div style={{
+                                    height: '100%', borderRadius: 3,
+                                    width: `${s.score || 0}%`,
+                                    background: isClear ? '#00E5A0' : s.recomendacao === 'NEUTRAL' ? 'var(--muted)' : 'var(--accent)',
+                                  }} />
+                                </div>
+                                <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                                  {s.score != null ? s.score.toFixed(0) : '—'}
+                                </span>
                               </div>
-                              <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--muted)' }}>
-                                {s.score != null ? s.score.toFixed(0) : '—'}
-                              </span>
                             </td>
                             <td style={{ padding: '10px 10px' }}><Badge rec={s.recomendacao} /></td>
                             <td style={{ padding: '10px 10px', fontSize: 11, color: 'var(--muted)' }}>{s.expiracao}</td>
