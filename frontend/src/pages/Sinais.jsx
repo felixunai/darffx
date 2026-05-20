@@ -192,7 +192,7 @@ function ExpandedDetail({ s, onHistorico }) {
                   <div style={{ fontSize: 10, color: 'var(--muted)' }}>dias</div>
                 </div>
               )}
-              {s.prob_profit != null && (
+              {s.prob_profit != null && s.prob_profit > 0 && (
                 <div style={{
                   flex: '1 1 120px', background: 'var(--surface)', borderRadius: 8,
                   padding: '10px 14px', border: `1px solid ${s.prob_profit >= 65 ? 'rgba(0,229,160,0.4)' : 'var(--border)'}`,

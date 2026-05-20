@@ -57,6 +57,36 @@ def _bollinger(closes: list[float], period: int = 20) -> tuple[Optional[float], 
     return round(upper, 6), round(lower, 6), (round(width, 4) if width else None)
 
 
+def invert_tech(tech: TechIndicators) -> TechIndicators:
+    """
+    Converte indicadores técnicos de pares invertidos (USD/JPY, USD/CAD).
+    CME cotiza esses pares ao contrário (CAD/USD, JPY/USD), então:
+      - SMA/preços: invertidos (1/valor)
+      - Tendência: ALTA ↔ BAIXA (quando CAD/USD sobe, USD/CAD cai)
+      - RSI: 100 - rsi (overbought CAD = oversold USD/CAD)
+    """
+    flip_tend  = {"ALTA": "BAIXA", "BAIXA": "ALTA", "LATERAL": "LATERAL"}
+    flip_sinal = {"VENDA": "COMPRA", "COMPRA": "VENDA",
+                  "BB_SQUEEZE": "BB_SQUEEZE", "NEUTRO": "NEUTRO"}
+
+    tend  = flip_tend.get(tech.tendencia, "LATERAL")
+    sinal = flip_sinal.get(tech.sinal_tecnico, "NEUTRO")
+    rsi   = round(100.0 - tech.rsi_14, 1) if tech.rsi_14 is not None else None
+
+    # SMAs: invertidas (ex: 0.7318 CAD/USD → 1.3666 USD/CAD)
+    sma20 = round(1.0 / tech.sma20, 5) if tech.sma20 else None
+    sma50 = round(1.0 / tech.sma50, 5) if tech.sma50 else None
+    # Bandas de Bollinger: lower/upper trocam ao inverter (menor CAD/USD = maior USD/CAD)
+    bb_upper = round(1.0 / tech.bb_lower, 5) if tech.bb_lower else None
+    bb_lower = round(1.0 / tech.bb_upper, 5) if tech.bb_upper else None
+
+    return TechIndicators(
+        sma20=sma20, sma50=sma50, rsi_14=rsi,
+        bb_upper=bb_upper, bb_lower=bb_lower, bb_width=tech.bb_width,
+        tendencia=tend, sinal_tecnico=sinal,
+    )
+
+
 # ── Fetch + cálculo ──────────────────────────────────────────────────────────
 
 def fetch_tech_indicators(ib: IB, symbol: str, exchange: str) -> TechIndicators:

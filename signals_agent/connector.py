@@ -15,7 +15,8 @@ def get_ib() -> IB:
         _ib = IB()
     if not _ib.isConnected():
         logger.info("Conectando ao TWS em %s:%s (clientId=%s)…", TWS_HOST, TWS_PORT, TWS_CLIENT_ID)
-        _ib.connect(TWS_HOST, TWS_PORT, clientId=TWS_CLIENT_ID, readonly=True)
+        _ib.connect(TWS_HOST, TWS_PORT, clientId=TWS_CLIENT_ID, readonly=True, timeout=20)
+        _ib.reqTimeout = 30   # requisições travam no máximo 30 s antes de lançar exceção
         logger.info("Conectado ao TWS.")
     return _ib
 

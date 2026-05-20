@@ -19,7 +19,7 @@ from .connector import disconnect, get_ib
 from .pusher import push_signals
 from .signal_engine import generate_signals
 from .synthetic import blend_tech, synthesize_eurjpy_chain
-from .tech_analysis import TechIndicators, fetch_tech_indicators
+from .tech_analysis import TechIndicators, fetch_tech_indicators, invert_tech
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,6 +58,8 @@ def run_once(dry_run: bool = False) -> int:
 
         try:
             tech = fetch_tech_indicators(ib, symbol, exchange)
+            if invert:
+                tech = invert_tech(tech)   # converte CME → convenção de exibição
         except Exception as e:
             logger.warning("[%s] Análise técnica falhou, usando padrão: %s", symbol, e)
             tech = TechIndicators()

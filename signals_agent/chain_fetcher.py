@@ -1,6 +1,7 @@
 """Busca a cadeia de opções FOP do próximo vencimento para um par CME."""
 
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, date
 from typing import Optional
@@ -133,12 +134,16 @@ def fetch_chain(ib: IB, symbol: str, par: str, exchange: str = "CME", invert_spo
     # 3. Os 30 strikes mais próximos do ATM (mais cobertura para achar delta 15 OTM)
     atm_strikes = sorted(strikes, key=lambda s: abs(s - spot_raw))[:30]
 
-    # 4. Buscar preços e Greeks
+    # 4. Buscar preços e Greeks (máximo 150 s por par para não travar o ciclo)
     ib.reqMarketDataType(3)
     calls_raw: list[OptionLeg] = []
     puts_raw:  list[OptionLeg] = []
+    _loop_start = time.time()
 
     for strike in sorted(atm_strikes):
+        if time.time() - _loop_start > 150:
+            logger.warning("[%s] Limite de tempo atingido buscando strikes — usando o que foi coletado.", symbol)
+            break
         for right, bucket in (("C", calls_raw), ("P", puts_raw)):
             opt = FuturesOption(symbol=symbol, lastTradeDateOrContractMonth=expiry,
                                 strike=strike, right=right, exchange=opt_exchange)
