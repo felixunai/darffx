@@ -311,8 +311,6 @@ function ExpandedDetail({ s, onHistorico }) {
   )
 }
 
-const SCORE_MIN_CLARO = 62
-
 export default function Sinais() {
   const { user } = useAuth()
   const navigate  = useNavigate()
