@@ -1,6 +1,7 @@
 """Envia sinais calculados para o backend no Railway via POST /sinais/sync."""
 
 import logging
+import math
 from dataclasses import asdict
 
 import httpx
@@ -13,6 +14,17 @@ logger = logging.getLogger(__name__)
 TIMEOUT = 30  # segundos
 
 
+def _sanitize(obj):
+    """Substitui nan/inf por None recursivamente — JSON não aceita esses valores."""
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize(v) for v in obj]
+    return obj
+
+
 def push_signals(signals: list[Signal], dry_run: bool = False) -> bool:
     """
     Faz POST de todos os sinais de uma rodada para o backend.
@@ -23,7 +35,7 @@ def push_signals(signals: list[Signal], dry_run: bool = False) -> bool:
         logger.info("Nenhum sinal para enviar.")
         return True
 
-    payload = [asdict(s) for s in signals]
+    payload = [_sanitize(asdict(s)) for s in signals]
 
     if dry_run:
         logger.info("[DRY-RUN] %d sinais (não enviados):", len(payload))
