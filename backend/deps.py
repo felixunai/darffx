@@ -34,6 +34,19 @@ _MIGRATIONS = [
     "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS ganhos_usd FLOAT DEFAULT 0",
     "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS perdas_usd FLOAT DEFAULT 0",
     "ALTER TABLE apuracoes ADD COLUMN IF NOT EXISTS custos_usd FLOAT DEFAULT 0",
+    # Sinais de opções — análise técnica e enriquecimento
+    "ALTER TABLE sinais_opcao ADD COLUMN IF NOT EXISTS rsi_14 FLOAT",
+    "ALTER TABLE sinais_opcao ADD COLUMN IF NOT EXISTS sma20 FLOAT",
+    "ALTER TABLE sinais_opcao ADD COLUMN IF NOT EXISTS sma50 FLOAT",
+    "ALTER TABLE sinais_opcao ADD COLUMN IF NOT EXISTS bb_width FLOAT",
+    "ALTER TABLE sinais_opcao ADD COLUMN IF NOT EXISTS tendencia VARCHAR(10)",
+    "ALTER TABLE sinais_opcao ADD COLUMN IF NOT EXISTS pc_ratio FLOAT",
+    "ALTER TABLE sinais_opcao ADD COLUMN IF NOT EXISTS motivo VARCHAR(700)",
+    "ALTER TABLE sinais_opcao ADD COLUMN IF NOT EXISTS strikes_recomendados VARCHAR(250)",
+    # Sinais de opções — métricas strangle vendido semanal
+    "ALTER TABLE sinais_opcao ADD COLUMN IF NOT EXISTS dte INTEGER DEFAULT 0",
+    "ALTER TABLE sinais_opcao ADD COLUMN IF NOT EXISTS prob_profit FLOAT",
+    "ALTER TABLE sinais_opcao ADD COLUMN IF NOT EXISTS expected_move FLOAT",
 ]
 
 def init_db():
