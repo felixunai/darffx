@@ -43,7 +43,7 @@ class OptionsChain:
 
 def _nearest_expiry(expirations: list[str]) -> str:
     today = datetime.utcnow().strftime("%Y%m%d")
-    futuros = sorted(e for e in expirations if e >= today)
+    futuros = sorted(e for e in expirations if e > today)
     if not futuros:
         raise ValueError("Nenhum vencimento futuro encontrado.")
     return futuros[0]
