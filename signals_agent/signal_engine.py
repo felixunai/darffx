@@ -486,5 +486,11 @@ def generate_signals(chain: OptionsChain, tech: TechIndicators) -> list[Signal]:
         s.motivo = _motivo_bear_spread(s.score, s.iv_skew, tech, atm_put, otm_put, invert_spot=inv)
         signals.append(s)
 
+    # Para EUR/JPY sintético, adiciona nota de origem ao motivo
+    if chain.symbol == "EURJPY":
+        nota = "[Sintético EUR/USD×USD/JPY, ρ≈-0.35 — strikes/prêmios estimados por Black-Scholes]"
+        for s in signals:
+            s.motivo = nota + " | " + s.motivo
+
     logger.info("[%s] %d sinais gerados.", chain.symbol, len(signals))
     return signals

@@ -18,7 +18,8 @@ from .config import PAIRS, SYNC_INTERVAL_MIN
 from .connector import disconnect, get_ib
 from .pusher import push_signals
 from .signal_engine import generate_signals
-from .tech_analysis import fetch_tech_indicators
+from .synthetic import blend_tech, synthesize_eurjpy_chain
+from .tech_analysis import TechIndicators, fetch_tech_indicators
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,6 +34,10 @@ def run_once(dry_run: bool = False) -> int:
     ib = get_ib()
     total_enviados = 0
     falhas = 0
+
+    # Armazena cadeias e indicadores técnicos para síntese posterior (EUR/JPY)
+    stored_chains: dict = {}
+    stored_techs:  dict = {}
 
     for pair in PAIRS:
         symbol   = pair["symbol"]
@@ -55,8 +60,10 @@ def run_once(dry_run: bool = False) -> int:
             tech = fetch_tech_indicators(ib, symbol, exchange)
         except Exception as e:
             logger.warning("[%s] Análise técnica falhou, usando padrão: %s", symbol, e)
-            from .tech_analysis import TechIndicators
             tech = TechIndicators()
+
+        stored_chains[par] = chain
+        stored_techs[par]  = tech
 
         try:
             signals = generate_signals(chain, tech)
@@ -74,6 +81,32 @@ def run_once(dry_run: bool = False) -> int:
             total_enviados += len(signals)
         else:
             falhas += 1
+
+    # ── EUR/JPY sintético ──────────────────────────────────────────────────────
+    eur_chain = stored_chains.get("EUR/USD")
+    jpy_chain = stored_chains.get("USD/JPY")
+    if eur_chain and jpy_chain:
+        logger.info("Sintetizando EUR/JPY a partir de EUR/USD e USD/JPY…")
+        try:
+            eurjpy_chain = synthesize_eurjpy_chain(eur_chain, jpy_chain)
+            if eurjpy_chain:
+                eur_tech = stored_techs.get("EUR/USD", TechIndicators())
+                jpy_tech = stored_techs.get("USD/JPY", TechIndicators())
+                eurjpy_tech = blend_tech(eur_tech, jpy_tech)
+                signals = generate_signals(eurjpy_chain, eurjpy_tech)
+                if signals:
+                    logger.info("[EUR/JPY] Enviando %d sinais sintéticos…", len(signals))
+                    ok = push_signals(signals, dry_run=dry_run)
+                    if ok:
+                        total_enviados += len(signals)
+                    else:
+                        falhas += 1
+        except Exception as e:
+            logger.error("[EUR/JPY] Erro na síntese: %s", e)
+            falhas += 1
+    else:
+        logger.info("EUR/JPY síntese ignorada (EUR/USD=%s, USD/JPY=%s disponíveis)",
+                    bool(eur_chain), bool(jpy_chain))
 
     logger.info("Ciclo concluído: %d sinais enviados, %d falhas.", total_enviados, falhas)
     return 0 if falhas == 0 else 1
