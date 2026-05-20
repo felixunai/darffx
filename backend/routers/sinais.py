@@ -198,6 +198,28 @@ def sync_sinais(
             score_final = s.score or 50.0
             rec_final   = s.recomendacao or "NEUTRAL"
 
+        # Corrige o texto de motivo quando o IV Rank muda a recomendação
+        # (o agente gera o motivo sem IV Rank, pode ficar inconsistente)
+        motivo_final = s.motivo or ""
+        if iv_rank is not None and s.tipo_sinal in ("straddle", "strangle"):
+            iv_label = f"IV Rank {iv_rank:.0f}%"
+            if rec_final == "SELL":
+                prefixo = f"{iv_label} → opções CARAS, bom momento para VENDER volatilidade."
+            elif rec_final == "BUY":
+                prefixo = f"{iv_label} → opções BARATAS, bom momento para COMPRAR volatilidade."
+            else:
+                prefixo = f"{iv_label} → IV neutra, aguardar IV Rank > 70 (vender) ou < 30 (comprar)."
+            # Substitui a conclusão genérica do agente pelo texto correto
+            import re
+            motivo_final = re.sub(
+                r"IV neutra — aguardar IV Rank.*?\.",
+                prefixo,
+                motivo_final,
+            )
+            # Se não havia trecho para substituir, coloca o prefixo no início
+            if prefixo not in motivo_final:
+                motivo_final = prefixo + (" | " + motivo_final if motivo_final else "")
+
         db.add(SinalOpcao(
             par=s.par,
             symbol=s.symbol,
@@ -231,7 +253,7 @@ def sync_sinais(
             bb_width=s.bb_width,
             tendencia=s.tendencia,
             pc_ratio=s.pc_ratio,
-            motivo=s.motivo,
+            motivo=motivo_final,
             strikes_recomendados=s.strikes_recomendados,
             dte=s.dte,
             prob_profit=s.prob_profit,
