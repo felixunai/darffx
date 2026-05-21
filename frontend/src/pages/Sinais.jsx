@@ -72,21 +72,24 @@ function calcRolagem(s) {
     motivoRol = `DTE ${dte} e delta dentro do normal — sem urgência`
   }
 
-  let qualidadeIV, qualidadeLabel
+  let qualidadeIV, qualidadeLabel, ivSuffix
   if (ivRank == null) {
-    qualidadeIV = 'neutro';   qualidadeLabel = 'IV acum.'
+    qualidadeIV = 'neutro';    qualidadeLabel = 'IV acum.';                                   ivSuffix = null
+  } else if (ivRank > 70) {
+    qualidadeIV = 'excelente'; qualidadeLabel = `IV Rank ${ivRank.toFixed(0)}% — ótimo`;      ivSuffix = `IV ${ivRank.toFixed(0)}% — prêmio ótimo ★`
   } else if (ivRank > 50) {
-    qualidadeIV = 'bom';      qualidadeLabel = `IV Rank ${ivRank.toFixed(0)}% — bom prêmio`
+    qualidadeIV = 'bom';       qualidadeLabel = `IV Rank ${ivRank.toFixed(0)}% — bom`;        ivSuffix = `IV ${ivRank.toFixed(0)}% — bom prêmio`
   } else if (ivRank > 30) {
-    qualidadeIV = 'moderado'; qualidadeLabel = `IV Rank ${ivRank.toFixed(0)}% — prêmio moderado`
+    qualidadeIV = 'moderado';  qualidadeLabel = `IV Rank ${ivRank.toFixed(0)}% — moderado`;   ivSuffix = `IV ${ivRank.toFixed(0)}% — moderado`
   } else {
-    qualidadeIV = 'ruim';     qualidadeLabel = `IV Rank ${ivRank.toFixed(0)}% — prêmio baixo`
+    qualidadeIV = 'ruim';      qualidadeLabel = `IV Rank ${ivRank.toFixed(0)}% — baixo`;      ivSuffix = `IV ${ivRank.toFixed(0)}% — prêmio baixo ⚠️`
   }
 
-  return { urgencia, motivoRol, qualidadeIV, qualidadeLabel }
+  return { urgencia, motivoRol, qualidadeIV, qualidadeLabel, ivSuffix }
 }
 
 const URGENCIA_ORDER = { ROLAR_AGORA: 0, ROLAR_BREVE: 1, AGUARDAR: 2 }
+const IV_ORDER       = { excelente: 0, bom: 1, moderado: 2, neutro: 3, ruim: 4 }
 
 // ── Componentes auxiliares ────────────────────────────────────────────────────
 
@@ -127,16 +130,31 @@ function Badge({ rec }) {
   )
 }
 
-function RollBadge({ urgencia }) {
+function RollBadge({ urgencia, qualidadeIV, ivSuffix }) {
   const cfg = ROLL_CONFIG[urgencia] || ROLL_CONFIG.AGUARDAR
+  // AGUARDAR com IV excelente ganha destaque dourado — sinaliza momento ideal para preparar rolagem
+  const isIdeal = urgencia === 'AGUARDAR' && qualidadeIV === 'excelente'
+  const badgeColor = isIdeal ? '#FFD700' : cfg.color
+  const badgeBg    = isIdeal ? 'rgba(255,215,0,0.15)' : cfg.bg
+  const ivColor = qualidadeIV === 'excelente' ? '#FFD700'
+                : qualidadeIV === 'bom'       ? '#00E5A0'
+                : qualidadeIV === 'ruim'      ? '#FF4C6A'
+                : 'var(--muted)'
   return (
-    <span style={{
-      fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
-      color: cfg.color, background: cfg.bg,
-      border: `1px solid ${cfg.color}40`, whiteSpace: 'nowrap',
-    }}>
-      {cfg.label}
-    </span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+      <span style={{
+        fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+        color: badgeColor, background: badgeBg,
+        border: `1px solid ${badgeColor}40`, whiteSpace: 'nowrap',
+      }}>
+        {cfg.label}
+      </span>
+      {ivSuffix && (
+        <span style={{ fontSize: 10, color: ivColor, paddingLeft: 4, whiteSpace: 'nowrap' }}>
+          {ivSuffix}
+        </span>
+      )}
+    </div>
   )
 }
 
@@ -461,7 +479,11 @@ export default function Sinais() {
   const rolagens = sinais
     .filter(s => s.tipo_sinal === 'strangle')
     .map(s => ({ ...s, ...calcRolagem(s) }))
-    .sort((a, b) => (URGENCIA_ORDER[a.urgencia] ?? 9) - (URGENCIA_ORDER[b.urgencia] ?? 9))
+    .sort((a, b) => {
+      const uDiff = (URGENCIA_ORDER[a.urgencia] ?? 9) - (URGENCIA_ORDER[b.urgencia] ?? 9)
+      if (uDiff !== 0) return uDiff
+      return (IV_ORDER[a.qualidadeIV] ?? 3) - (IV_ORDER[b.qualidadeIV] ?? 3)
+    })
 
   const nRolarAgora = rolagens.filter(r => r.urgencia === 'ROLAR_AGORA').length
   const nRolarBreve = rolagens.filter(r => r.urgencia === 'ROLAR_BREVE').length
@@ -849,7 +871,7 @@ export default function Sinais() {
                               }
                             </td>
                             <td style={{ padding: '10px 10px' }}>
-                              <RollBadge urgencia={r.urgencia} />
+                              <RollBadge urgencia={r.urgencia} qualidadeIV={r.qualidadeIV} ivSuffix={r.ivSuffix} />
                             </td>
                             <td style={{ padding: '10px 10px', fontSize: 12, color: 'var(--muted)' }}>
                               {r.motivoRol}
