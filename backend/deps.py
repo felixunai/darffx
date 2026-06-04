@@ -53,6 +53,22 @@ _MIGRATIONS = [
     "DELETE FROM sinais_opcao WHERE par = 'CHF/USD'",
     # Remove pares descontinuados por baixa liquidez nas opções CME
     "DELETE FROM sinais_opcao WHERE par IN ('USD/CHF', 'AUD/USD', 'USD/CAD')",
+    # Calendário econômico semanal
+    """CREATE TABLE IF NOT EXISTS eventos_economicos (
+        id SERIAL PRIMARY KEY,
+        event_key VARCHAR(32) UNIQUE NOT NULL,
+        titulo VARCHAR(200) NOT NULL,
+        pais VARCHAR(5) NOT NULL,
+        moeda VARCHAR(5) NOT NULL,
+        impacto VARCHAR(10) NOT NULL,
+        evento_em TIMESTAMP NOT NULL,
+        estimativa FLOAT,
+        anterior FLOAT,
+        atual FLOAT,
+        unidade VARCHAR(20),
+        pares VARCHAR(100),
+        criado_em TIMESTAMP DEFAULT NOW()
+    )""",
 ]
 
 def init_db():
