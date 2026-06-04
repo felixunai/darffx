@@ -234,11 +234,40 @@ function HistoricoModal({ par, tipo, onClose }) {
   )
 }
 
-function ExpandedDetail({ s, onHistorico }) {
+function ExpandedDetail({ s, eventos, onHistorico }) {
+  const evPar = (eventos || []).filter(e => e.pares?.includes(s.par))
   return (
     <tr>
       <td colSpan={15} style={{ padding: 0, background: 'var(--surface2)' }}>
         <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+          {evPar.length > 0 && (
+            <div style={{
+              borderRadius: 8, padding: '10px 14px',
+              background: evPar.some(e => e.impacto === 'high') ? 'rgba(255,76,106,0.07)' : 'rgba(255,179,71,0.07)',
+              border: `1px solid ${evPar.some(e => e.impacto === 'high') ? 'rgba(255,76,106,0.3)' : 'rgba(255,179,71,0.3)'}`,
+            }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                ⚡ Eventos Econômicos da Semana — {s.par}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {evPar.map(e => {
+                  const cfg = IMPACT_CFG[e.impacto] || IMPACT_CFG.medium
+                  return (
+                    <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                      <span>{FLAG[e.pais] || '🌐'}</span>
+                      <span style={{ flex: 1 }}>{e.titulo}</span>
+                      <span style={{ color: 'var(--muted)', fontSize: 11 }}>{fmtEventTime(e.evento_em)}</span>
+                      <span style={{ color: cfg.color, fontSize: 10, fontWeight: 700 }}>{cfg.label}</span>
+                      {e.atual != null && (
+                        <span style={{ color: '#00E5A0', fontWeight: 600, fontSize: 11 }}>Real: {e.atual}{e.unidade||''}</span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
           {s.strikes_recomendados && (
             <div style={{
               background: 'var(--surface)', borderRadius: 8, padding: '10px 14px',
@@ -436,6 +465,126 @@ function RolExpanded({ r }) {
   )
 }
 
+// ── Calendário Econômico ──────────────────────────────────────────────────────
+
+const FLAG = { US:'🇺🇸', EU:'🇪🇺', DE:'🇩🇪', FR:'🇫🇷', GB:'🇬🇧', JP:'🇯🇵', CA:'🇨🇦', AU:'🇦🇺', NZ:'🇳🇿', CH:'🇨🇭' }
+const IMPACT_CFG = {
+  high:   { color: '#FF4C6A', bg: 'rgba(255,76,106,0.12)',  label: '● Alto' },
+  medium: { color: '#FFB347', bg: 'rgba(255,179,71,0.12)',  label: '● Médio' },
+}
+
+function fmtEventTime(iso) {
+  if (!iso) return '—'
+  const s = iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z'
+  return new Date(s).toLocaleString('pt-BR', {
+    weekday: 'short', day: '2-digit', month: '2-digit',
+    hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo',
+  })
+}
+
+function CalendarioSemana({ eventos, filtroPar }) {
+  const [aberto, setAberto] = useState(false)
+
+  const relevantes = filtroPar !== 'Todos'
+    ? eventos.filter(e => e.pares && e.pares.includes(filtroPar))
+    : eventos
+
+  const altoImpacto = relevantes.filter(e => e.impacto === 'high')
+  const total       = relevantes.length
+
+  if (total === 0) return null
+
+  return (
+    <div style={{
+      background: 'var(--surface)', border: '1px solid var(--border)',
+      borderRadius: 10, marginBottom: 20, overflow: 'hidden',
+    }}>
+      {/* Header clicável */}
+      <button
+        onClick={() => setAberto(a => !a)}
+        style={{
+          width: '100%', background: 'none', border: 'none', cursor: 'pointer',
+          padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10,
+          color: 'var(--text)', textAlign: 'left',
+        }}
+      >
+        <span style={{ fontSize: 14 }}>📅</span>
+        <span style={{ fontWeight: 700, fontSize: 13 }}>Calendário Econômico da Semana</span>
+        {altoImpacto.length > 0 && (
+          <span style={{
+            background: 'rgba(255,76,106,0.15)', color: '#FF4C6A',
+            border: '1px solid rgba(255,76,106,0.35)', borderRadius: 20,
+            padding: '1px 8px', fontSize: 11, fontWeight: 700,
+          }}>
+            {altoImpacto.length} alto impacto
+          </span>
+        )}
+        <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: 11 }}>
+          {total} evento{total !== 1 ? 's' : ''} {filtroPar !== 'Todos' ? `para ${filtroPar}` : 'monitorados'}
+          {'  '}{aberto ? '▲' : '▼'}
+        </span>
+      </button>
+
+      {/* Chips de alto impacto sempre visíveis */}
+      {!aberto && altoImpacto.length > 0 && (
+        <div style={{ padding: '0 16px 10px', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {altoImpacto.slice(0, 5).map(e => (
+            <span key={e.id} style={{
+              background: 'rgba(255,76,106,0.1)', border: '1px solid rgba(255,76,106,0.3)',
+              borderRadius: 20, padding: '3px 10px', fontSize: 11, color: '#FF4C6A',
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+            }}>
+              {FLAG[e.pais] || '🌐'} {e.titulo} · {fmtEventTime(e.evento_em)}
+            </span>
+          ))}
+          {altoImpacto.length > 5 && (
+            <span style={{ fontSize: 11, color: 'var(--muted)', alignSelf: 'center' }}>
+              +{altoImpacto.length - 5} mais
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Calendário completo expandido */}
+      {aberto && (
+        <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {relevantes.map(e => {
+            const cfg = IMPACT_CFG[e.impacto] || IMPACT_CFG.medium
+            return (
+              <div key={e.id} style={{
+                display: 'flex', alignItems: 'flex-start', gap: 10,
+                padding: '8px 12px', borderRadius: 8,
+                background: 'var(--surface2)', border: `1px solid ${cfg.color}20`,
+              }}>
+                <span style={{ fontSize: 18, flexShrink: 0 }}>{FLAG[e.pais] || '🌐'}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>{e.titulo}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    <span>{fmtEventTime(e.evento_em)}</span>
+                    {e.pares && <span>Pares: {e.pares.join(', ')}</span>}
+                    {e.estimativa != null && <span>Est: {e.estimativa}{e.unidade || ''}</span>}
+                    {e.anterior   != null && <span>Ant: {e.anterior}{e.unidade || ''}</span>}
+                    {e.atual      != null && (
+                      <span style={{ color: '#00E5A0', fontWeight: 600 }}>Real: {e.atual}{e.unidade || ''}</span>
+                    )}
+                  </div>
+                </div>
+                <span style={{
+                  fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20,
+                  color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.color}40`,
+                  flexShrink: 0, whiteSpace: 'nowrap',
+                }}>
+                  {cfg.label}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Página principal ──────────────────────────────────────────────────────────
 
 export default function Sinais() {
@@ -453,6 +602,7 @@ export default function Sinais() {
   const [expandedId, setExpandedId]       = useState(null)
   const [aba, setAba]                     = useState('sinais')
   const [expandedRolId, setExpandedRolId] = useState(null)
+  const [eventos, setEventos]             = useState([])
 
   const carregar = useCallback(() => {
     if (!isPaid) return
@@ -465,6 +615,11 @@ export default function Sinais() {
   }, [isPaid])
 
   useEffect(() => { carregar() }, [carregar])
+
+  useEffect(() => {
+    if (!isPaid) return
+    api.get('/eventos').then(r => setEventos(r.data)).catch(() => {})
+  }, [isPaid])
 
   const filtrados = sinais.filter(s => {
     if (filtroTipo !== 'Todos' && s.tipo_sinal !== filtroTipo) return false
@@ -613,6 +768,8 @@ export default function Sinais() {
               </span>
             </div>
 
+            <CalendarioSemana eventos={eventos} filtroPar={filtroPar} />
+
             {!loading && sinais.length > 0 && sinais.every(s => s.iv_rank_30d == null) && (
               <div style={{
                 background: 'rgba(255,179,71,0.08)', border: '1px solid rgba(255,179,71,0.3)',
@@ -661,9 +818,18 @@ export default function Sinais() {
                   </thead>
                   <tbody>
                     {filtrados.map(s => {
-                      const isExpanded = expandedId === s.id
-                      const hasDetail  = s.motivo || s.strikes_recomendados || s.tendencia
-                      const isClear    = s.recomendacao !== 'NEUTRAL' && (s.score || 0) >= SCORE_MIN_CLARO
+                      const isExpanded  = expandedId === s.id
+                      const hasDetail   = s.motivo || s.strikes_recomendados || s.tendencia
+                      const isClear     = s.recomendacao !== 'NEUTRAL' && (s.score || 0) >= SCORE_MIN_CLARO
+                      const evParHigh   = eventos.filter(e => e.impacto === 'high' && e.pares?.includes(s.par))
+                      const evParMed    = eventos.filter(e => e.impacto === 'medium' && e.pares?.includes(s.par))
+                      const hasHighEv   = evParHigh.length > 0
+                      const hasMedEv    = !hasHighEv && evParMed.length > 0
+                      const evTitle     = hasHighEv
+                        ? `⚡ ${evParHigh.length} evento(s) de ALTO impacto esta semana:\n${evParHigh.map(e => `• ${e.titulo} (${fmtEventTime(e.evento_em)})`).join('\n')}`
+                        : hasMedEv
+                          ? `ℹ️ ${evParMed.length} evento(s) de médio impacto esta semana:\n${evParMed.map(e => `• ${e.titulo} (${fmtEventTime(e.evento_em)})`).join('\n')}`
+                          : ''
                       return (
                         <>
                           <tr
@@ -688,6 +854,17 @@ export default function Sinais() {
                                 </span>
                               )}
                               {s.par}
+                              {(hasHighEv || hasMedEv) && (
+                                <span
+                                  title={evTitle}
+                                  style={{
+                                    marginLeft: 6, display: 'inline-block',
+                                    width: 7, height: 7, borderRadius: '50%',
+                                    background: hasHighEv ? '#FF4C6A' : '#FFB347',
+                                    verticalAlign: 'middle', cursor: 'help', flexShrink: 0,
+                                  }}
+                                />
+                              )}
                             </td>
                             <td style={{ padding: '10px 10px', color: 'var(--muted)', textTransform: 'capitalize' }}>
                               {s.tipo_sinal.replace('_', ' ')}
@@ -738,6 +915,7 @@ export default function Sinais() {
                             <ExpandedDetail
                               key={`detail-${s.id}`}
                               s={s}
+                              eventos={eventos}
                               onHistorico={() => setModal({ par: s.par, tipo: s.tipo_sinal })}
                             />
                           )}

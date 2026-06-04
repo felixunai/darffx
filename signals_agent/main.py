@@ -16,7 +16,8 @@ from .backfiller import run_backfill
 from .chain_fetcher import fetch_chain
 from .config import PAIRS, SYNC_INTERVAL_MIN
 from .connector import disconnect, get_ib
-from .pusher import push_signals
+from .events_fetcher import fetch_events
+from .pusher import push_events, push_signals
 from .signal_engine import generate_signals
 from .synthetic import blend_tech, synthesize_eurjpy_chain
 from .tech_analysis import TechIndicators, fetch_tech_indicators, invert_tech
@@ -109,6 +110,14 @@ def run_once(dry_run: bool = False) -> int:
     else:
         logger.info("EUR/JPY síntese ignorada (EUR/USD=%s, USD/JPY=%s disponíveis)",
                     bool(eur_chain), bool(jpy_chain))
+
+    # ── Calendário econômico ───────────────────────────────────────────────────
+    try:
+        events = fetch_events(days_ahead=7)
+        if events:
+            push_events(events)
+    except Exception as e:
+        logger.warning("Calendário econômico ignorado: %s", e)
 
     logger.info("Ciclo concluído: %d sinais enviados, %d falhas.", total_enviados, falhas)
     return 0 if falhas == 0 else 1

@@ -1,4 +1,4 @@
-"""Envia sinais calculados para o backend no Railway via POST /sinais/sync."""
+"""Envia sinais e eventos econômicos para o backend no Railway."""
 
 import logging
 import math
@@ -7,6 +7,7 @@ from dataclasses import asdict
 import httpx
 
 from .config import RAILWAY_API_URL, SINAIS_API_KEY
+from .events_fetcher import EconomicEvent
 from .signal_engine import Signal
 
 logger = logging.getLogger(__name__)
@@ -71,4 +72,38 @@ def push_signals(signals: list[Signal], dry_run: bool = False,
         logger.error("Erro HTTP ao enviar sinais: %s — %s", e.response.status_code, e.response.text)
     except Exception as e:
         logger.error("Falha ao conectar ao Railway: %s", e)
+    return False
+
+
+def push_events(events: list[EconomicEvent]) -> bool:
+    """Envia lista de eventos econômicos para POST /eventos/sync."""
+    if not events:
+        return True
+
+    payload = []
+    for e in events:
+        payload.append({
+            "event_key":  e.event_key,
+            "titulo":     e.titulo,
+            "pais":       e.pais,
+            "moeda":      e.moeda,
+            "impacto":    e.impacto,
+            "evento_em":  e.evento_em,
+            "estimativa": e.estimativa,
+            "anterior":   e.anterior,
+            "atual":      e.atual,
+            "unidade":    e.unidade,
+            "pares":      ",".join(e.pares),
+        })
+
+    url     = f"{RAILWAY_API_URL.rstrip('/')}/eventos/sync"
+    headers = {"X-Api-Key": SINAIS_API_KEY, "Content-Type": "application/json"}
+    try:
+        resp = httpx.post(url, json=payload, headers=headers, timeout=TIMEOUT)
+        resp.raise_for_status()
+        data = resp.json()
+        logger.info("Calendário: %d eventos gravados.", data.get("upserted", "?"))
+        return True
+    except Exception as e:
+        logger.warning("Falha ao enviar eventos econômicos: %s", e)
     return False

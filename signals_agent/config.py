@@ -12,6 +12,7 @@ TWS_HOST             = os.getenv("TWS_HOST", "127.0.0.1")
 TWS_PORT             = int(os.getenv("TWS_PORT", "7497"))
 TWS_CLIENT_ID        = int(os.getenv("TWS_CLIENT_ID", "1"))
 SYNC_INTERVAL_MIN    = int(os.getenv("SYNC_INTERVAL_MINUTES", "50"))
+FINNHUB_API_KEY      = os.getenv("FINNHUB_API_KEY", "")
 
 # Pares a cobrir. symbol = ticker CME; par = label UI; invert_spot: exibir como 1/spot
 PAIRS = [

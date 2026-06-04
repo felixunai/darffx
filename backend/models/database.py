@@ -151,6 +151,24 @@ class PtaxCache(Base):
     __table_args__ = (UniqueConstraint("mes", "ano", name="uq_ptax_mes_ano"),)
 
 
+class EventoEconomico(Base):
+    """Eventos do calendário econômico enviados pelo agente local (Finnhub)."""
+    __tablename__ = "eventos_economicos"
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    event_key  = Column(String(32), unique=True, nullable=False)  # MD5 de país+evento+hora
+    titulo     = Column(String(200), nullable=False)
+    pais       = Column(String(5), nullable=False)
+    moeda      = Column(String(5), nullable=False)
+    impacto    = Column(String(10), nullable=False)   # high | medium
+    evento_em  = Column(DateTime, nullable=False)
+    estimativa = Column(Float, nullable=True)
+    anterior   = Column(Float, nullable=True)
+    atual      = Column(Float, nullable=True)
+    unidade    = Column(String(20), nullable=True)
+    pares      = Column(String(100), nullable=True)   # "EUR/USD,USD/JPY" (CSV)
+    criado_em  = Column(DateTime, default=datetime.utcnow)
+
+
 class SinalOpcao(Base):
     """Sinal de operação estruturada em opções Forex (CME/IBKR). Gerado pelo agente local."""
     __tablename__ = "sinais_opcao"

@@ -1,6 +1,7 @@
 """Busca a cadeia de opções FOP do próximo vencimento para um par CME."""
 
 import logging
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, date
 from typing import Optional
@@ -43,10 +44,21 @@ class OptionsChain:
 
 def _nearest_expiry(expirations: list[str]) -> str:
     today = datetime.utcnow().strftime("%Y%m%d")
-    futuros = sorted(e for e in expirations if e > today)
+    # Inclui o vencimento de hoje (>= em vez de >) — resolve pares cujo ciclo
+    # semanal expira no mesmo dia em que o agente roda (ex: GBP segunda/quarta).
+    futuros = sorted(e for e in expirations if e >= today)
     if not futuros:
         raise ValueError("Nenhum vencimento futuro encontrado.")
     return futuros[0]
+
+
+def _safe_int(val) -> int:
+    """Converte para int sem explodir em NaN/None."""
+    try:
+        v = float(val) if val is not None else 0.0
+        return 0 if math.isnan(v) or math.isinf(v) else int(v)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _calc_dte(expiry: str) -> int:
@@ -110,14 +122,23 @@ def fetch_chain(ib: IB, symbol: str, par: str, exchange: str = "CME", invert_spo
         logger.warning("[%s] Nenhuma cadeia de opções encontrada.", symbol)
         return None
 
-    chain = next((c for c in chains if c.exchange == exchange), chains[0])
-    opt_exchange = chain.exchange or exchange
+    # Prefere chains CME; se nenhuma tiver vencimento futuro, tenta as demais.
+    today = datetime.utcnow().strftime("%Y%m%d")
+    ordered = sorted(chains, key=lambda c: (c.exchange != exchange, c.exchange))
+    chain = None
+    expiry = None
+    for c in ordered:
+        futuros = sorted(e for e in c.expirations if e >= today)
+        if futuros:
+            chain = c
+            expiry = futuros[0]
+            break
 
-    try:
-        expiry = _nearest_expiry(list(chain.expirations))
-    except ValueError as e:
-        logger.warning("[%s] %s", symbol, e)
+    if not chain or not expiry:
+        logger.warning("[%s] Nenhum vencimento futuro encontrado.", symbol)
         return None
+
+    opt_exchange = chain.exchange or exchange
 
     strikes = sorted(chain.strikes)
 
@@ -198,8 +219,8 @@ def fetch_chain(ib: IB, symbol: str, par: str, exchange: str = "CME", invert_spo
             theta=greeks.theta    if greeks else None,
             vega=greeks.vega      if greeks else None,
             iv=greeks.impliedVol  if greeks else ticker.impliedVolatility,
-            volume=int(getattr(ticker, "volume", 0) or 0),
-            open_interest=int(oi),
+            volume=_safe_int(getattr(ticker, "volume", 0)),
+            open_interest=_safe_int(oi),
         )
         bucket = calls_raw if right == "C" else puts_raw
         bucket.append(leg)
