@@ -103,6 +103,7 @@ def get_eventos(
         .filter(
             EventoEconomico.evento_em >= inicio,
             EventoEconomico.evento_em <= fim,
+            EventoEconomico.impacto == "high",
         )
         .order_by(EventoEconomico.evento_em)
     )

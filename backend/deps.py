@@ -53,6 +53,8 @@ _MIGRATIONS = [
     "DELETE FROM sinais_opcao WHERE par = 'CHF/USD'",
     # Remove pares descontinuados por baixa liquidez nas opções CME
     "DELETE FROM sinais_opcao WHERE par IN ('USD/CHF', 'AUD/USD', 'USD/CAD')",
+    # Remove eventos de médio/baixo impacto que foram gravados antes do filtro ser aplicado
+    "DELETE FROM eventos_economicos WHERE impacto != 'high'",
     # Calendário econômico semanal
     """CREATE TABLE IF NOT EXISTS eventos_economicos (
         id SERIAL PRIMARY KEY,

@@ -155,5 +155,5 @@ def fetch_events(days_ahead: int = 7) -> list[EconomicEvent]:
             pares      = pares,
         ))
 
-    logger.info("Calendário: %d eventos relevantes para os próximos %d dias.", len(events), days_ahead)
+    logger.info("Calendário: %d eventos de alto impacto para os próximos %d dias.", len(events), days_ahead)
     return events
