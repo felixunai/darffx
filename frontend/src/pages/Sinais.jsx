@@ -469,8 +469,7 @@ function RolExpanded({ r }) {
 
 const FLAG = { US:'🇺🇸', EU:'🇪🇺', DE:'🇩🇪', FR:'🇫🇷', GB:'🇬🇧', JP:'🇯🇵', CA:'🇨🇦', AU:'🇦🇺', NZ:'🇳🇿', CH:'🇨🇭' }
 const IMPACT_CFG = {
-  high:   { color: '#FF4C6A', bg: 'rgba(255,76,106,0.12)',  label: '● Alto' },
-  medium: { color: '#FFB347', bg: 'rgba(255,179,71,0.12)',  label: '● Médio' },
+  high: { color: '#FF4C6A', bg: 'rgba(255,76,106,0.12)', label: '⚡ Alto Impacto' },
 }
 
 function fmtEventTime(iso) {
@@ -821,15 +820,11 @@ export default function Sinais() {
                       const isExpanded  = expandedId === s.id
                       const hasDetail   = s.motivo || s.strikes_recomendados || s.tendencia
                       const isClear     = s.recomendacao !== 'NEUTRAL' && (s.score || 0) >= SCORE_MIN_CLARO
-                      const evParHigh   = eventos.filter(e => e.impacto === 'high' && e.pares?.includes(s.par))
-                      const evParMed    = eventos.filter(e => e.impacto === 'medium' && e.pares?.includes(s.par))
+                      const evParHigh   = eventos.filter(e => e.pares?.includes(s.par))
                       const hasHighEv   = evParHigh.length > 0
-                      const hasMedEv    = !hasHighEv && evParMed.length > 0
                       const evTitle     = hasHighEv
                         ? `⚡ ${evParHigh.length} evento(s) de ALTO impacto esta semana:\n${evParHigh.map(e => `• ${e.titulo} (${fmtEventTime(e.evento_em)})`).join('\n')}`
-                        : hasMedEv
-                          ? `ℹ️ ${evParMed.length} evento(s) de médio impacto esta semana:\n${evParMed.map(e => `• ${e.titulo} (${fmtEventTime(e.evento_em)})`).join('\n')}`
-                          : ''
+                        : ''
                       return (
                         <>
                           <tr
@@ -854,13 +849,13 @@ export default function Sinais() {
                                 </span>
                               )}
                               {s.par}
-                              {(hasHighEv || hasMedEv) && (
+                              {hasHighEv && (
                                 <span
                                   title={evTitle}
                                   style={{
                                     marginLeft: 6, display: 'inline-block',
                                     width: 7, height: 7, borderRadius: '50%',
-                                    background: hasHighEv ? '#FF4C6A' : '#FFB347',
+                                    background: '#FF4C6A',
                                     verticalAlign: 'middle', cursor: 'help', flexShrink: 0,
                                   }}
                                 />

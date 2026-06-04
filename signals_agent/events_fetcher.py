@@ -98,7 +98,7 @@ def fetch_events(days_ahead: int = 7) -> list[EconomicEvent]:
     events: list[EconomicEvent] = []
     for item in raw:
         impacto = (item.get("impact") or "low").lower()
-        if impacto == "low":
+        if impacto != "high":
             continue
 
         country = (item.get("country") or "").upper()
