@@ -252,7 +252,7 @@ function ExpandedDetail({ s, eventos, onHistorico }) {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                 {evPar.map(e => {
-                  const cfg = IMPACT_CFG[e.impacto] || IMPACT_CFG.medium
+                  const cfg = IMPACT_CFG[e.impacto] || IMPACT_CFG.high
                   return (
                     <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
                       <span>{FLAG[e.pais] || '🌐'}</span>
@@ -548,7 +548,7 @@ function CalendarioSemana({ eventos, filtroPar }) {
       {aberto && (
         <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {relevantes.map(e => {
-            const cfg = IMPACT_CFG[e.impacto] || IMPACT_CFG.medium
+            const cfg = IMPACT_CFG[e.impacto] || IMPACT_CFG.high
             return (
               <div key={e.id} style={{
                 display: 'flex', alignItems: 'flex-start', gap: 10,
